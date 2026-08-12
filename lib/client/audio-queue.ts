@@ -1,0 +1,197 @@
+'use client';
+
+/**
+ * صف پخش صدا با Web Audio API (§فاز ۲).
+ *
+ * دو الزام متضاد را هم‌زمان برآورده می‌کند:
+ *  ۱. هر جمله به‌محض آماده شدن پخش شود (تأخیر پایین، F6.4)
+ *  ۲. جمله‌ها پشت‌سرهم و بدون همپوشانی شنیده شوند
+ *
+ * راه‌حل: جمله‌ها موازی از سرور گرفته و رمزگشایی می‌شوند (تا شبکه
+ * گلوگاه نشود) ولی با ترتیب اصلی زمان‌بندی می‌شوند.
+ *
+ * Barge-In (§F8): `stopAll()` باید در کمتر از ۳۰۰ میلی‌ثانیه صدا را
+ * قطع کند — همهٔ Sourceهای فعال متوقف، صف خالی، و درخواست‌های
+ * در پرواز Abort می‌شوند.
+ */
+
+type QueueItem = {
+  index: number;
+  promise: Promise<AudioBuffer | null>;
+};
+
+export type AudioQueueCallbacks = {
+  /** اولین باری که صدا واقعاً شروع به پخش می‌کند (برای §۱۰.۱) */
+  onFirstAudio?: () => void;
+  onPlaybackStart?: () => void;
+  onPlaybackEnd?: () => void;
+  onError?: (message: string) => void;
+};
+
+export class AudioQueue {
+  private context: AudioContext | null = null;
+  private pending: QueueItem[] = [];
+  private activeSources = new Set<AudioBufferSourceNode>();
+  private controllers = new Set<AbortController>();
+  private nextStartTime = 0;
+  private draining = false;
+  private playedAny = false;
+  private generation = 0;
+
+  constructor(private readonly callbacks: AudioQueueCallbacks = {}) {}
+
+  /** باید از دل یک رویداد کاربر صدا زده شود تا مرورگر اجازهٔ صدا بدهد. */
+  async unlock(): Promise<void> {
+    const context = this.ensureContext();
+    if (context.state === 'suspended') {
+      await context.resume().catch(() => {});
+    }
+  }
+
+  get isPlaying(): boolean {
+    return this.activeSources.size > 0;
+  }
+
+  /**
+   * یک جمله را به صف اضافه می‌کند. دریافت و رمزگشایی بلافاصله
+   * شروع می‌شود؛ پخش به‌ترتیب انجام می‌گیرد.
+   */
+  enqueue(sentence: string, turnId: string, index: number): void {
+    const generation = this.generation;
+    const controller = new AbortController();
+    this.controllers.add(controller);
+
+    const promise = this.fetchAndDecode(sentence, turnId, controller)
+      .catch(() => null)
+      .finally(() => {
+        this.controllers.delete(controller);
+      });
+
+    // اگر در این فاصله Barge-In رخ داده باشد، نتیجه دور ریخته می‌شود.
+    if (generation !== this.generation) return;
+
+    this.pending.push({ index, promise });
+    this.pending.sort((a, b) => a.index - b.index);
+    void this.drain(generation);
+  }
+
+  /** قطع فوری همه‌چیز — زنجیرهٔ لغو Barge-In (§F8). */
+  stopAll(): void {
+    this.generation += 1;
+    this.pending = [];
+
+    for (const controller of this.controllers) controller.abort();
+    this.controllers.clear();
+
+    for (const source of this.activeSources) {
+      try {
+        source.onended = null;
+        source.stop();
+      } catch {
+        /* از قبل متوقف شده */
+      }
+    }
+    this.activeSources.clear();
+
+    this.nextStartTime = 0;
+    this.draining = false;
+    this.callbacks.onPlaybackEnd?.();
+  }
+
+  /** پایان نوبت — آماده‌سازی برای نوبت بعدی بدون قطع صدای فعلی. */
+  resetTiming(): void {
+    this.playedAny = false;
+  }
+
+  dispose(): void {
+    this.stopAll();
+    void this.context?.close().catch(() => {});
+    this.context = null;
+  }
+
+  private ensureContext(): AudioContext {
+    if (!this.context) {
+      const Ctor =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctor) throw new Error('مرورگر از Web Audio پشتیبانی نمی‌کند.');
+      this.context = new Ctor();
+    }
+    return this.context;
+  }
+
+  private async fetchAndDecode(
+    sentence: string,
+    turnId: string,
+    controller: AbortController,
+  ): Promise<AudioBuffer | null> {
+    const response = await fetch('/api/speech/tts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: sentence, turnId }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      // ۵۰۱ یعنی TTS پیکربندی نشده — تنزل به «فقط متن» (§۱۲.۲).
+      if (response.status !== 501) {
+        this.callbacks.onError?.('صدا موقتاً در دسترس نیست.');
+      }
+      return null;
+    }
+
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength === 0) return null;
+
+    return this.ensureContext().decodeAudioData(bytes);
+  }
+
+  private async drain(generation: number): Promise<void> {
+    if (this.draining) return;
+    this.draining = true;
+
+    try {
+      while (this.pending.length > 0) {
+        if (generation !== this.generation) return;
+
+        const item = this.pending.shift()!;
+        const buffer = await item.promise;
+
+        if (generation !== this.generation) return;
+        if (!buffer) continue;
+
+        this.schedule(buffer, generation);
+      }
+    } finally {
+      this.draining = false;
+    }
+  }
+
+  private schedule(buffer: AudioBuffer, generation: number): void {
+    const context = this.ensureContext();
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+
+    const startAt = Math.max(context.currentTime, this.nextStartTime);
+    source.start(startAt);
+    this.nextStartTime = startAt + buffer.duration;
+
+    this.activeSources.add(source);
+
+    if (!this.playedAny) {
+      this.playedAny = true;
+      this.callbacks.onFirstAudio?.();
+      this.callbacks.onPlaybackStart?.();
+    }
+
+    source.onended = () => {
+      this.activeSources.delete(source);
+      if (generation !== this.generation) return;
+      if (this.activeSources.size === 0 && this.pending.length === 0) {
+        this.nextStartTime = 0;
+        this.callbacks.onPlaybackEnd?.();
+      }
+    };
+  }
+}

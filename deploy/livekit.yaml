@@ -1,0 +1,35 @@
+# پیکربندی سرور LiveKit برای استقرار Self-Host.
+#
+# ⚠️ مقادیر keys را با کلید واقعی خودتان جایگزین کنید و همان‌ها را در
+#    LIVEKIT_API_KEY و LIVEKIT_API_SECRET قرار دهید. این فایل نباید با
+#    کلید واقعی commit شود.
+
+port: 7880
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  # در محیط عملیاتی با IP عمومی، این را false کنید و use_external_ip
+  # را روشن بگذارید.
+  use_external_ip: true
+
+keys:
+  # قالب: <API_KEY>: <API_SECRET>
+  devkey: devsecretdevsecretdevsecretdevsecret
+
+logging:
+  level: info
+
+room:
+  # اتاق‌ها به‌ازای هر مکالمه ساخته می‌شوند و پس از خالی شدن باید
+  # سریع بسته شوند تا منابع آزاد شود.
+  empty_timeout: 60
+  max_participants: 4
+
+turn:
+  enabled: false
+  # برای عبور از NATهای سخت‌گیر، TURN را با گواهی معتبر فعال کنید:
+  # enabled: true
+  # domain: turn.example.com
+  # tls_port: 5349

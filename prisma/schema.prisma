@@ -1,0 +1,236 @@
+// مدل داده — دستیار دیجیتال فارسی
+// مطابق بخش ۸ سند محصول.
+//
+// نکته: ستون‌های embedding از نوع pgvector هستند و Prisma آن‌ها را
+// به‌صورت Unsupported می‌شناسد؛ خواندن و نوشتن‌شان با SQL خام در
+// lib/db/vector.ts انجام می‌شود.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ─── هویت آواتار ───────────────────────────────────────────────
+
+model AvatarProfile {
+  id            String   @id @default(uuid())
+  imageUrl      String
+  status        String   @default("pending") // pending|processing|ready|error
+  errorMessage  String?
+  landmarksJson Json? // نقاط کلیدی چهره
+  embeddingJson Json? // بردار ویژگی چهره
+  idleLoopUrl   String? // حلقهٔ Idle تولیدشده
+  width         Int?
+  height        Int?
+  isActive      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+model VoiceProfile {
+  id               String    @id @default(uuid())
+  sourceAudioUrl   String
+  status           String    @default("pending") // pending|processing|ready|error
+  errorMessage     String?
+  providerName     String // نام سرویس TTS
+  providerVoiceId  String? // شناسهٔ صدا نزد سرویس
+  durationSeconds  Float?
+  consentConfirmed Boolean   @default(false) // تأیید مالکیت صدا (§۱۱.۳)
+  consentAt        DateTime?
+  consentIp        String?
+  consentUserId    String?
+  isActive         Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([isActive])
+}
+
+// ─── پایگاه دانش ───────────────────────────────────────────────
+
+model Document {
+  id           String          @id @default(uuid())
+  title        String
+  fileName     String
+  fileType     String // pdf|docx|txt|md
+  sourceUrl    String
+  status       String          @default("pending") // pending|processing|indexed|error
+  errorMessage String?
+  pageCount    Int?
+  chunkCount   Int             @default(0)
+  byteSize     Int?
+  uploadKey    String?         @unique // برای Idempotency آپلود
+  indexedAt    DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  chunks       DocumentChunk[]
+
+  @@index([status])
+}
+
+model DocumentChunk {
+  id         String   @id @default(uuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  content    String
+  page       Int?
+  section    String?
+  ordinal    Int      @default(0)
+  tokenCount Int?
+  embedding  Unsupported("vector(1536)")?
+  createdAt  DateTime @default(now())
+
+  @@index([documentId])
+}
+
+// ─── مکالمات ───────────────────────────────────────────────────
+
+model Conversation {
+  id           String     @id @default(uuid())
+  summary      String? // خلاصهٔ فشرده برای حافظه
+  topic        String? // دستهٔ موضوعی غالب
+  inputMode    String? // voice|text|mixed
+  messageCount Int        @default(0)
+  startedAt    DateTime   @default(now())
+  endedAt      DateTime?
+  messages     Message[]
+  toolCalls    ToolCall[]
+  turns        Turn[]
+
+  @@index([startedAt])
+  @@index([topic])
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String // user|assistant|system|tool
+  content        String
+  inputType      String       @default("text") // text|voice
+  topic          String? // دستهٔ موضوعی این پیام
+  wasRefused     Boolean      @default(false) // آیا پاسخ امتناع بود
+  refusalReason  String? // political|religious|medical|...
+  refusalLayer   String? // pre|prompt|post — کدام لایهٔ Guardrail
+  injectionFlag  Boolean      @default(false) // تلاش برای دور زدن محدودیت (F11.7)
+  ragUsed        Boolean      @default(false)
+  ragChunkIds    String[]
+  latencyMs      Int?
+  turnId         String?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([topic])
+  @@index([createdAt])
+  @@index([wasRefused])
+}
+
+// ─── ردیابی نوبت‌ها (برای Barge-In و بودجهٔ تأخیر §۱۰.۱) ────────
+
+model Turn {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  status         String       @default("active") // active|completed|interrupted|error
+  inputType      String       @default("text")
+  vadStartAt     DateTime?
+  sttStartAt     DateTime?
+  sttEndAt       DateTime?
+  llmStartAt     DateTime?
+  firstTokenAt   DateTime?
+  ttsStartAt     DateTime?
+  firstAudioAt   DateTime?
+  avatarStartAt  DateTime?
+  firstFrameAt   DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ─── ابزارها ───────────────────────────────────────────────────
+
+model ToolCall {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  turnId         String?
+  name           String
+  argumentsJson  Json
+  resultJson     Json?
+  status         String       @default("pending") // pending|success|error|timeout
+  errorMessage   String?
+  latencyMs      Int?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([name])
+  @@index([createdAt])
+}
+
+// ─── تنظیمات و مدیریت ──────────────────────────────────────────
+
+model Settings {
+  id                    String   @id @default("singleton")
+  businessName          String   @default("کسب‌وکار شما")
+  systemPrompt          String
+  llmProvider           String   @default("gemini")
+  llmModel              String   @default("gemini-2.0-flash")
+  temperature           Float    @default(0.7)
+  maxTokens             Int      @default(1024)
+  ragTopK               Int      @default(5)
+  ragThreshold          Float    @default(0.7)
+  blockedCategories     String[] // ["political","religious",...]
+  refusalMessages       Json // پیام‌های امتناع هر دسته (آرایه برای تنوع)
+  customBlockedKeywords String[]
+  enabledTools          String[]
+  kioskResetSeconds     Int      @default(120)
+  setupCompleted        Boolean  @default(false)
+  updatedAt             DateTime @updatedAt
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  role         String    @default("admin")
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+}
+
+model UnansweredQuestion {
+  id          String   @id @default(uuid())
+  question    String
+  normalized  String   @unique // برای تجمیع سؤالات هم‌معنی از نظر متنی
+  askCount    Int      @default(1)
+  resolved    Boolean  @default(false)
+  lastAskedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([resolved])
+  @@index([askCount])
+}
+
+// ─── لاگ خطای سرویس‌ها (برای §۱۲.۳ / E3) ──────────────────────
+
+model ServiceError {
+  id        String   @id @default(uuid())
+  service   String // llm|tts|stt|avatar|rag|tool|livekit
+  message   String
+  detail    String?
+  turnId    String?
+  createdAt DateTime @default(now())
+
+  @@index([service])
+  @@index([createdAt])
+}

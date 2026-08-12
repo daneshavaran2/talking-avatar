@@ -1,0 +1,36 @@
+# وابستگی‌ها
+/node_modules
+/.pnp
+.pnp.*
+
+# خروجی ساخت
+/.next/
+/out/
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# محیط — هرگز نباید در مخزن قرار بگیرد (§۱۱.۱ / S5)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# داده‌های آپلودشده در محیط توسعه
+/storage/
+!/storage/.gitkeep
+
+# پایگاه داده
+/prisma/dev.db*
+
+# لاگ و ابزار
+npm-debug.log*
+yarn-error.log*
+.DS_Store
+*.pem
+.vercel
+
+# سرویس GPU
+services/media-engine/__pycache__/
+services/media-engine/.venv/
+services/media-engine/cache/
