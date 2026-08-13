@@ -122,8 +122,10 @@ export async function POST(request: NextRequest) {
     },
 
     // Barge-In: مولد باید بسته شود وگرنه اتصال به سرویس صدا باز می‌ماند.
+    // خطای خود بستن نادیده گرفته می‌شود — اینجا دیگر کاری از دستمان
+    // برنمی‌آید و یک Rejection بی‌صاحب فقط لاگ را کثیف می‌کند.
     cancel() {
-      void iterator.return?.(undefined);
+      void Promise.resolve(iterator.return?.(undefined)).catch(() => {});
     },
   });
 
