@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { capabilities } from '@/lib/config/env';
 import { prisma } from '@/lib/db/client';
 import { getSettings } from '@/lib/db/settings';
+import { geometryFromLandmarks } from '@/lib/lipsync/geometry';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,13 @@ export async function GET() {
   const [avatar, voiceReady, settings, indexedDocs] = await Promise.all([
     prisma.avatarProfile.findFirst({
       where: { isActive: true },
-      select: { imageUrl: true, status: true, idleLoopUrl: true },
+      select: {
+        imageUrl: true,
+        status: true,
+        idleLoopUrl: true,
+        faceGeometry: true,
+        landmarksJson: true,
+      },
       orderBy: { updatedAt: 'desc' },
     }),
     prisma.voiceProfile.count({ where: { isActive: true, status: 'ready' } }),
@@ -38,8 +45,15 @@ export async function GET() {
     avatar: {
       imageUrl: avatar?.status === 'ready' || avatar?.status === 'pending' ? avatar.imageUrl : null,
       idleLoopUrl: avatar?.idleLoopUrl ?? null,
-      /** آیا رندر بلادرنگ فعال است، یا فقط تصویر ثابت داریم؟ */
+      /** آیا موتور تولیدی GPU فعال است؟ لیپ‌سینک مرورگری مستقل از این است. */
       realtime: configured.avatar,
+      /**
+       * هندسهٔ چهره برای لیپ‌سینک: تنظیم دستی مدیر مقدم است، وگرنه
+       * از نقاط کلیدی MediaPipe ساخته می‌شود.
+       */
+      geometry:
+        avatar?.faceGeometry ??
+        (avatar?.landmarksJson ? geometryFromLandmarks(avatar.landmarksJson) : null),
     },
     speech: {
       ttsAvailable: configured.tts && voiceReady > 0,

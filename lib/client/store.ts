@@ -31,7 +31,13 @@ export type RuntimeConfig = {
   setupCompleted: boolean;
   kioskResetSeconds: number;
   knowledgeBaseReady: boolean;
-  avatar: { imageUrl: string | null; idleLoopUrl: string | null; realtime: boolean };
+  avatar: {
+    imageUrl: string | null;
+    idleLoopUrl: string | null;
+    realtime: boolean;
+    /** هندسهٔ دهان و چشم برای لیپ‌سینک (§F7) */
+    geometry: unknown;
+  };
   speech: { ttsAvailable: boolean; sttMode: 'browser' | 'server' | 'off' };
   livekit: boolean;
 };

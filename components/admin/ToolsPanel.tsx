@@ -1,26 +1,30 @@
 'use client';
 
-import { Alert, Card, Spinner, Toggle } from '@/components/admin/ui';
+import { InfoIcon, SaveIcon, TriangleAlertIcon } from 'lucide-react';
+import { toast } from 'sonner';
+
+import { SectionCard } from '@/components/admin/ui';
 import { useSettings } from '@/components/admin/use-settings';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 
 /**
  * ابزارهای خارجی (§F9).
  *
- * هر ابزار مستقلاً فعال/غیرفعال می‌شود. فقط ابزارهای فعال به مدل
- * زبانی معرفی می‌شوند — معرفی ابزاری که پشتش Workflow ندارد باعث
- * می‌شود مدل وعده‌ای بدهد که محقق نمی‌شود.
+ * فقط ابزارهای فعال به مدل زبانی معرفی می‌شوند — معرفی ابزاری که
+ * پشتش Workflow ندارد باعث می‌شود مدل وعده‌ای بدهد که محقق نمی‌شود.
  */
 export function ToolsPanel() {
-  const { settings, capabilities, tools, loading, saving, saved, error, patch, save } =
-    useSettings();
+  const { settings, capabilities, tools, loading, saving, patch, save } = useSettings();
 
   if (loading || !settings) {
     return (
-      <Card title="ابزارهای خارجی">
-        <div className="flex justify-center py-8 text-content-faint">
-          <Spinner className="h-5 w-5" />
-        </div>
-      </Card>
+      <SectionCard title="ابزارهای خارجی">
+        <Skeleton className="h-64 w-full" />
+      </SectionCard>
     );
   }
 
@@ -31,55 +35,64 @@ export function ToolsPanel() {
     patch({ enabledTools: next });
   };
 
+  const persist = async () => {
+    const ok = await save({ enabledTools: settings.enabledTools });
+    if (ok) toast.success('تغییرات ذخیره شد.');
+    else toast.error('ذخیرهٔ تنظیمات ممکن نشد.');
+  };
+
   return (
-    <div className="space-y-5">
-      <Card
-        title="ابزارهای خارجی"
-        description="برای سؤالاتی که نیاز به دادهٔ زنده دارند — قیمت لحظه‌ای، موجودی انبار، وضعیت سفارش."
-      >
-        <div className="space-y-4">
-          {!capabilities?.tools && (
-            <Alert tone="warn">
+    <SectionCard
+      title="ابزارهای خارجی"
+      description="برای سؤالاتی که نیاز به دادهٔ زنده دارند — قیمت لحظه‌ای، موجودی انبار، وضعیت سفارش."
+    >
+      <div className="flex flex-col gap-4">
+        {!capabilities?.tools && (
+          <Alert variant="warning">
+            <TriangleAlertIcon />
+            <AlertDescription>
               آدرس n8n تنظیم نشده است (<code className="latn">N8N_BASE_URL</code>). تا زمانی که
               اتوماسیون پیکربندی نشود، حتی ابزارهای فعال هم به مدل معرفی نمی‌شوند.
-            </Alert>
-          )}
-
-          <Alert tone="info">
-            هر ابزار به یک Webhook در n8n وصل می‌شود:{' '}
-            <code className="latn">POST {'{N8N_BASE_URL}'}/webhook/{'{tool-path}'}</code>. هر
-            درخواست با HMAC-SHA256 امضا می‌شود و Workflow باید امضا را در هدر{' '}
-            <code className="latn">x-signature</code> بررسی کند.
+            </AlertDescription>
           </Alert>
+        )}
 
-          <div className="space-y-2">
-            {tools.map((tool) => (
-              <Toggle
-                key={tool.name}
-                checked={settings.enabledTools.includes(tool.name)}
-                onChange={(next) => toggle(tool.name, next)}
-                label={tool.label}
-                description={`${tool.description} · مهلت پاسخ: ${tool.timeoutMs} میلی‌ثانیه`}
-              />
-            ))}
-          </div>
+        <Alert variant="info">
+          <InfoIcon />
+          <AlertDescription>
+            هر ابزار به یک Webhook در n8n وصل می‌شود و هر درخواست با HMAC-SHA256 امضا می‌شود.
+            Workflow باید امضا را در هدر <code className="latn">x-signature</code> بررسی کند.
+          </AlertDescription>
+        </Alert>
 
-          {error && <Alert tone="error">{error}</Alert>}
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void save({ enabledTools: settings.enabledTools })}
-              disabled={saving}
-              className="btn-primary"
+        <div className="flex flex-col gap-2">
+          {tools.map((tool) => (
+            <label
+              key={tool.name}
+              className="flex cursor-pointer items-start justify-between gap-3 rounded-lg border p-3"
             >
-              {saving && <Spinner />}
-              ذخیرهٔ تغییرات
-            </button>
-            {saved && <span className="text-xs text-state-listening">ذخیره شد.</span>}
-          </div>
+              <span className="flex min-w-0 flex-col gap-1">
+                <span className="text-sm">{tool.label}</span>
+                <span className="text-xs leading-relaxed text-muted-foreground">
+                  {tool.description} · مهلت پاسخ: {tool.timeoutMs} میلی‌ثانیه
+                </span>
+              </span>
+              <Switch
+                checked={settings.enabledTools.includes(tool.name)}
+                onCheckedChange={(checked) => toggle(tool.name, checked)}
+                className="mt-0.5 shrink-0"
+              />
+            </label>
+          ))}
         </div>
-      </Card>
-    </div>
+
+        <div>
+          <Button onClick={() => void persist()} disabled={saving}>
+            {saving ? <Spinner /> : <SaveIcon />}
+            ذخیرهٔ تغییرات
+          </Button>
+        </div>
+      </div>
+    </SectionCard>
   );
 }

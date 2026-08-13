@@ -378,7 +378,7 @@ export function useConversationEngine() {
     return () => window.clearInterval(timer);
   }, [config?.kioskResetSeconds, resetConversation]);
 
-  return { sendMessage, toggleMic, interrupt, resetConversation };
+  return { sendMessage, toggleMic, interrupt, resetConversation, audio };
 }
 
 function reportTiming(turnId: string | null, timings: Record<string, number>): void {

@@ -1,14 +1,19 @@
 'use client';
 
+import { InfoIcon, TrashIcon, TriangleAlertIcon, UploadIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Card, Spinner, StatusBadge } from '@/components/admin/ui';
-import { TrashIcon } from '@/components/ui/icons';
+import { toast } from 'sonner';
+
+import { SectionCard, StatusBadge } from '@/components/admin/ui';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 
 /**
  * مدیریت چهرهٔ آواتار (§F1).
  *
  * وضعیت به‌صورت زنده Poll می‌شود چون پیش‌پردازش روی GPU ناهمگام
- * است و ممکن است تا یک دقیقه طول بکشد (معیار پذیرش F1).
+ * است و ممکن است تا یک دقیقه طول بکشد.
  */
 
 type AvatarProfile = {
@@ -38,7 +43,6 @@ const PHOTO_GUIDE = [
 export function AvatarPanel({ onReady }: { onReady?: (ready: boolean) => void } = {}) {
   const [data, setData] = useState<AvatarResponse | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -50,7 +54,7 @@ export function AvatarPanel({ onReady }: { onReady?: (ready: boolean) => void } 
       setData(body);
       onReady?.(body.profile?.status === 'ready');
     } catch {
-      setError('خواندن وضعیت آواتار ممکن نشد.');
+      toast.error('خواندن وضعیت آواتار ممکن نشد.');
     }
   }, [onReady]);
 
@@ -67,7 +71,6 @@ export function AvatarPanel({ onReady }: { onReady?: (ready: boolean) => void } 
 
   const upload = async (file: File) => {
     setBusy(true);
-    setError(null);
     setWarning(null);
 
     try {
@@ -80,14 +83,15 @@ export function AvatarPanel({ onReady }: { onReady?: (ready: boolean) => void } 
         | null;
 
       if (!response.ok) {
-        setError(body?.error ?? 'آپلود عکس ممکن نشد.');
+        toast.error(body?.error ?? 'آپلود عکس ممکن نشد.');
         return;
       }
 
       if (body?.warning) setWarning(body.warning);
+      else toast.success('عکس آواتار ذخیره شد.');
       await load();
     } catch {
-      setError('آپلود عکس ممکن نشد.');
+      toast.error('آپلود عکس ممکن نشد.');
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = '';
@@ -100,72 +104,71 @@ export function AvatarPanel({ onReady }: { onReady?: (ready: boolean) => void } 
     setBusy(false);
     setData(null);
     await load();
+    toast.success('آواتار حذف شد.');
   };
 
   const profile = data?.profile ?? null;
 
   return (
-    <Card
+    <SectionCard
       title="چهرهٔ آواتار"
       description="یک عکس با چهرهٔ واضح و روبه‌رو آپلود کنید. عکس یک‌بار پردازش و نتیجه Cache می‌شود."
       action={
         profile ? (
-          <button
-            type="button"
-            onClick={() => void remove()}
-            disabled={busy}
-            className="btn-danger h-8 px-2.5 text-xs"
-          >
-            <TrashIcon className="h-3.5 w-3.5" />
+          <Button variant="ghost" size="sm" onClick={() => void remove()} disabled={busy}>
+            <TrashIcon />
             حذف
-          </button>
+          </Button>
         ) : null
       }
     >
       <div className="grid gap-5 sm:grid-cols-[10rem_minmax(0,1fr)]">
-        <div className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl border border-line bg-surface-sunken">
+        <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl border bg-muted">
           {profile?.idleLoopUrl ? (
-            <video
-              src={profile.idleLoopUrl}
-              className="h-full w-full object-cover"
-              muted
-              loop
-              autoPlay
-              playsInline
-            />
+            <video src={profile.idleLoopUrl} className="size-full object-cover" muted loop autoPlay playsInline />
           ) : profile?.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={profile.imageUrl} alt="پیش‌نمایش آواتار" className="h-full w-full object-cover" />
+            <img src={profile.imageUrl} alt="پیش‌نمایش آواتار" className="size-full object-cover" />
           ) : (
-            <div className="flex h-full items-center justify-center px-4 text-center text-[11px] text-content-faint">
+            <div className="flex size-full items-center justify-center px-4 text-center text-[11px] text-muted-foreground">
               هنوز عکسی آپلود نشده
             </div>
           )}
         </div>
 
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           {profile && (
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <StatusBadge status={profile.status} />
               {profile.width && profile.height && (
-                <span className="text-content-faint latn">
+                <span className="text-muted-foreground latn">
                   {profile.width}×{profile.height}
                 </span>
-              )}
-              {profile.idleLoopUrl && (
-                <span className="text-content-faint">حلقهٔ Idle آماده است</span>
               )}
             </div>
           )}
 
-          {profile?.errorMessage && <Alert tone="warn">{profile.errorMessage}</Alert>}
-          {warning && <Alert tone="warn">{warning}</Alert>}
-          {error && <Alert tone="error">{error}</Alert>}
+          {profile?.errorMessage && (
+            <Alert variant="warning">
+              <TriangleAlertIcon />
+              <AlertDescription>{profile.errorMessage}</AlertDescription>
+            </Alert>
+          )}
+
+          {warning && (
+            <Alert variant="warning">
+              <TriangleAlertIcon />
+              <AlertDescription>{warning}</AlertDescription>
+            </Alert>
+          )}
 
           {data && !data.realtimeAvailable && (
-            <Alert tone="info">
-              موتور آواتار بلادرنگ (media-engine) پیکربندی نشده است. عکس ذخیره می‌شود و به‌صورت
-              تصویر ثابت نمایش داده خواهد شد؛ هماهنگی لب انجام نمی‌شود.
+            <Alert variant="info">
+              <InfoIcon />
+              <AlertDescription>
+                موتور تولیدی GPU پیکربندی نشده است. لیپ‌سینک بلادرنگ از روی صدا در مرورگر اجرا
+                می‌شود؛ برای تنظیم جای دهان به بخش کالیبراسیون پایین بروید.
+              </AlertDescription>
             </Alert>
           )}
 
@@ -182,19 +185,21 @@ export function AvatarPanel({ onReady }: { onReady?: (ready: boolean) => void } 
               className="hidden"
               id="avatar-file"
             />
-            <label htmlFor="avatar-file" className="btn-primary cursor-pointer">
-              {busy && <Spinner />}
-              {profile ? 'جایگزینی عکس' : 'آپلود عکس'}
-            </label>
-            <p className="mt-2 hint">JPG، PNG یا WebP تا ۱۰ مگابایت</p>
+            <Button asChild disabled={busy}>
+              <label htmlFor="avatar-file" className="cursor-pointer">
+                {busy ? <Spinner /> : <UploadIcon />}
+                {profile ? 'جایگزینی عکس' : 'آپلود عکس'}
+              </label>
+            </Button>
+            <p className="mt-2 text-xs text-muted-foreground">JPG، PNG یا WebP تا ۱۰ مگابایت</p>
           </div>
 
           <div>
-            <p className="mb-1.5 text-xs font-medium text-content-muted">راهنمای عکس مناسب</p>
-            <ul className="space-y-1">
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">راهنمای عکس مناسب</p>
+            <ul className="flex flex-col gap-1">
               {PHOTO_GUIDE.map((line) => (
-                <li key={line} className="flex gap-1.5 hint">
-                  <span className="text-brand">•</span>
+                <li key={line} className="flex gap-1.5 text-xs text-muted-foreground">
+                  <span className="text-primary">•</span>
                   {line}
                 </li>
               ))}
@@ -202,6 +207,6 @@ export function AvatarPanel({ onReady }: { onReady?: (ready: boolean) => void } 
           </div>
         </div>
       </div>
-    </Card>
+    </SectionCard>
   );
 }
