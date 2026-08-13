@@ -19,6 +19,15 @@ import {
   INJECTION_PATTERNS,
   OUTPUT_PATTERNS,
 } from '@/lib/guardrails/patterns';
+import {
+  backoffDelayMs,
+  fetchWithRetry,
+  isRetryableError,
+  isRetryableStatus,
+  retryAfterMs,
+} from '@/lib/http/retry';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 
 let failures = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -233,5 +242,146 @@ check('rejects short landmark arrays', geometryFromLandmarks([[0.5, 0.5, 0]]), n
   check('chin below mouth', geometry !== null && geometry.chinY > geometry.mouth.y, true);
 }
 
-console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}\n`);
-process.exit(failures === 0 ? 0 : 1);
+console.log('\n── Retry / backoff (E4) ──────────────────────');
+{
+  check('transient statuses are retryable', [429, 500, 502, 503, 504].map(isRetryableStatus), [
+    true, true, true, true, true,
+  ]);
+  check('permanent statuses are not', [400, 401, 403, 404, 409, 422].map(isRetryableStatus), [
+    false, false, false, false, false, false,
+  ]);
+
+  // لغو کاربر (Barge-In) هرگز نباید تلاش مجدد شود.
+  const abortError = new DOMException('لغو شد', 'AbortError');
+  check('abort is never retried', isRetryableError(abortError), false);
+  check('timeout is retried', isRetryableError(new DOMException('دیر شد', 'TimeoutError')), true);
+  check('plain error is not retried', isRetryableError(new Error('bad json')), false);
+  {
+    const network = new TypeError('fetch failed');
+    (network as Error & { cause?: unknown }).cause = { code: 'ECONNRESET' };
+    check('socket reset is retried', isRetryableError(network), true);
+  }
+
+  // تأخیر باید نمایی رشد کند، هرگز صفر نشود، و از سقف رد نشود.
+  const policy = { attempts: 4, baseDelayMs: 400, maxDelayMs: 4000 };
+  check('backoff floor is half the ceiling', backoffDelayMs(0, policy, () => 0), 200);
+  check('backoff ceiling respected at attempt 0', backoffDelayMs(0, policy, () => 1), 400);
+  check('backoff grows exponentially', backoffDelayMs(2, policy, () => 1), 1600);
+  check('backoff clamped to max', backoffDelayMs(10, policy, () => 1), 4000);
+
+  const withHeader = (value: string) =>
+    retryAfterMs(new Response(null, { headers: { 'retry-after': value } }), 0);
+  check('retry-after in seconds', withHeader('2'), 2000);
+  check('retry-after as date', withHeader(new Date(5000).toUTCString()), 5000);
+  check('no retry-after header', retryAfterMs(new Response(null)), null);
+}
+
+// ── تلاش مجدد روی سوکت واقعی ───────────────────────────────────
+// سرور موقتی درون همین فرایند بالا می‌آید تا رفتار واقعی `fetch`
+// سنجیده شود، نه یک شبیه‌سازی از آن. این بخش ناهمگام است، پس در
+// یک تابع بسته شده (tsx اینجا به CJS ترجمه می‌کند و top-level await
+// ندارد) و خلاصهٔ نهایی هم داخل همان اجرا می‌شود.
+async function socketChecks(): Promise<void> {
+  console.log('\n── Retry against a real socket ───────────────');
+  const hits: Record<string, number> = {};
+
+  const server = createServer((request, response) => {
+    const path = (request.url ?? '').split('?')[0] ?? '';
+    hits[path] = (hits[path] ?? 0) + 1;
+
+    if (path === '/flaky') {
+      // دو بار خطای گذرا، بار سوم موفق.
+      if ((hits[path] ?? 0) < 3) {
+        response.writeHead(503).end('unavailable');
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
+      return;
+    }
+
+    if (path === '/permanent') {
+      response.writeHead(400).end('bad request');
+      return;
+    }
+
+    if (path === '/slow-hint') {
+      response.writeHead(503, { 'retry-after': '600' }).end('come back later');
+      return;
+    }
+
+    if (path === '/always-503') {
+      response.writeHead(503).end('unavailable');
+      return;
+    }
+
+    response.writeHead(404).end();
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const fast = { attempts: 3, baseDelayMs: 20, maxDelayMs: 60 };
+
+  {
+    const response = await fetchWithRetry(`${base}/flaky`, {}, { policy: fast });
+    check('transient failure eventually succeeds', response.status, 200);
+    check('it really retried twice', hits['/flaky'], 3);
+  }
+
+  {
+    const response = await fetchWithRetry(`${base}/permanent`, {}, { policy: fast });
+    check('permanent failure returns immediately', response.status, 400);
+    check('permanent failure sent one request only', hits['/permanent'], 1);
+  }
+
+  {
+    // سرویس می‌گوید ده دقیقه دیگر برگرد؛ انتظار بی‌فایده است.
+    const response = await fetchWithRetry(`${base}/slow-hint`, {}, { policy: fast });
+    check('long retry-after is not waited out', response.status, 503);
+    check('long retry-after sent one request only', hits['/slow-hint'], 1);
+  }
+
+  {
+    // آخرین تلاش هم که شکست بخورد، همان پاسخ ناموفق برمی‌گردد —
+    // خطا پنهان نمی‌شود.
+    const response = await fetchWithRetry(`${base}/always-503`, {}, { policy: fast });
+    check('exhausted retries return the failure', response.status, 503);
+    check('all attempts were used', hits['/always-503'], fast.attempts);
+  }
+
+  {
+    // Barge-In وسط Backoff: باید فوراً برگردد، نه پس از پایان تایمر.
+    const controller = new AbortController();
+    const before = hits['/always-503'] ?? 0;
+    setTimeout(() => controller.abort(), 50);
+
+    const startedAt = Date.now();
+    let aborted = false;
+    await fetchWithRetry(
+      `${base}/always-503`,
+      {},
+      {
+        policy: { attempts: 3, baseDelayMs: 5000, maxDelayMs: 9000 },
+        signal: controller.signal,
+      },
+    ).catch((error: unknown) => {
+      aborted = error instanceof Error && error.name === 'AbortError';
+    });
+    const elapsed = Date.now() - startedAt;
+
+    check('abort during backoff rejects', aborted, true);
+    check('abort does not wait out the timer', elapsed < 1000, true);
+    check('abort stops further attempts', (hits['/always-503'] ?? 0) - before, 1);
+  }
+
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+}
+
+void socketChecks()
+  .catch((error: unknown) => {
+    failures += 1;
+    console.log(`FAIL  socket checks crashed — ${error instanceof Error ? error.message : error}`);
+  })
+  .then(() => {
+    console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}\n`);
+    process.exit(failures === 0 ? 0 : 1);
+  });

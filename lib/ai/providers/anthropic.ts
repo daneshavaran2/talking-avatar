@@ -2,6 +2,7 @@ import 'server-only';
 import type { ChatMessage, LLMOptions, LLMProvider, LLMStreamChunk } from '@/lib/ai/types';
 import { ProviderRequestError } from '@/lib/ai/types';
 import { describeHttpError, readSse, safeJsonParse } from '@/lib/ai/stream-utils';
+import { fetchWithRetry, logRetry } from '@/lib/http/retry';
 
 const DEFAULT_BASE = 'https://api.anthropic.com/v1';
 const API_VERSION = '2023-06-01';
@@ -60,16 +61,20 @@ export class AnthropicProvider implements LLMProvider {
       }));
     }
 
-    const response = await fetch(`${this.baseUrl}/messages`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': this.apiKey,
-        'anthropic-version': API_VERSION,
+    const response = await fetchWithRetry(
+      `${this.baseUrl}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': this.apiKey,
+          'anthropic-version': API_VERSION,
+        },
+        body: JSON.stringify(body),
+        signal: options.signal,
       },
-      body: JSON.stringify(body),
-      signal: options.signal,
-    });
+      { signal: options.signal, onRetry: logRetry('llm') },
+    );
 
     if (!response.ok || !response.body) {
       throw new ProviderRequestError('llm', await describeHttpError(response), response.status);

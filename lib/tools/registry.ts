@@ -17,6 +17,14 @@ export type ToolDefinition = ToolSchema & {
   webhookPath: string;
   /** بیشینهٔ زمان انتظار؛ پیش‌فرض ۵ ثانیه (F9.5) */
   timeoutMs: number;
+  /**
+   * آیا تکرار این فراخوانی بی‌خطر است؟ (§۱۲.۳ / E4)
+   *
+   * فقط ابزارهای «خواندنی» تلاش مجدد می‌شوند. تکرار `bookMeeting`
+   * یا `createLead` یعنی دو رزرو و دو سرنخ تکراری در سیستم مشتری —
+   * ضرری که از خودِ خطای گذرا بدتر است.
+   */
+  idempotent: boolean;
 };
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -28,6 +36,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       'وقتی استفاده کن که کاربر دربارهٔ جزئیات یک محصول مشخص می‌پرسد.',
     webhookPath: 'get-product',
     timeoutMs: 5000,
+    idempotent: true,
     parameters: {
       type: 'object',
       properties: {
@@ -44,6 +53,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       'چون قیمت‌ها در اسناد ممکن است قدیمی باشند.',
     webhookPath: 'get-price',
     timeoutMs: 5000,
+    idempotent: true,
     parameters: {
       type: 'object',
       properties: {
@@ -59,6 +69,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: 'موجودی فعلی یک محصول در انبار را برمی‌گرداند.',
     webhookPath: 'get-inventory',
     timeoutMs: 5000,
+    idempotent: true,
     parameters: {
       type: 'object',
       properties: {
@@ -73,6 +84,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: 'وضعیت و کد رهگیری یک سفارش را با شمارهٔ سفارش برمی‌گرداند.',
     webhookPath: 'get-order-status',
     timeoutMs: 8000,
+    idempotent: true,
     parameters: {
       type: 'object',
       properties: {
@@ -90,6 +102,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       'فقط وقتی استفاده کن که کاربر خودش خواسته با او تماس گرفته شود.',
     webhookPath: 'create-lead',
     timeoutMs: 8000,
+    idempotent: false,
     parameters: {
       type: 'object',
       properties: {
@@ -106,6 +119,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: 'کاتالوگ محصولات را به شمارهٔ تماس یا ایمیل کاربر ارسال می‌کند.',
     webhookPath: 'send-catalog',
     timeoutMs: 8000,
+    idempotent: false,
     parameters: {
       type: 'object',
       properties: {
@@ -121,6 +135,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: 'یک قرار ملاقات یا جلسهٔ مشاوره برای کاربر رزرو می‌کند.',
     webhookPath: 'book-meeting',
     timeoutMs: 10000,
+    idempotent: false,
     parameters: {
       type: 'object',
       properties: {
@@ -138,6 +153,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: 'یک تیکت پشتیبانی برای مشکل کاربر ثبت می‌کند و شمارهٔ پیگیری برمی‌گرداند.',
     webhookPath: 'create-support-ticket',
     timeoutMs: 10000,
+    idempotent: false,
     parameters: {
       type: 'object',
       properties: {

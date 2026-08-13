@@ -2,6 +2,7 @@ import 'server-only';
 import type { STTProvider, STTResult, TTSOptions, TTSProvider } from '@/lib/ai/types';
 import { ProviderRequestError } from '@/lib/ai/types';
 import { describeHttpError, readLines, safeJsonParse } from '@/lib/ai/stream-utils';
+import { fetchWithRetry, logRetry } from '@/lib/http/retry';
 
 /**
  * کلاینت سرویس GPU محلی (`services/media-engine`).
@@ -25,17 +26,22 @@ export class MediaEngineTtsProvider implements TTSProvider {
   ) {}
 
   async *synthesizeStream(text: string, options: TTSOptions = {}): AsyncIterable<Uint8Array> {
-    const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}/tts/stream`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...authHeaders(this.token) },
-      body: JSON.stringify({
-        text,
-        voice_id: options.voiceId ?? null,
-        format: options.format ?? 'mp3',
-        speed: options.speed ?? 1,
-      }),
-      signal: options.signal,
-    });
+    // تلاش مجدد فقط تا پیش از رسیدن اولین بایت صدا امن است (E4).
+    const response = await fetchWithRetry(
+      `${this.baseUrl.replace(/\/$/, '')}/tts/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...authHeaders(this.token) },
+        body: JSON.stringify({
+          text,
+          voice_id: options.voiceId ?? null,
+          format: options.format ?? 'mp3',
+          speed: options.speed ?? 1,
+        }),
+        signal: options.signal,
+      },
+      { signal: options.signal, onRetry: logRetry('tts') },
+    );
 
     if (!response.ok || !response.body) {
       throw new ProviderRequestError('tts', await describeHttpError(response), response.status);

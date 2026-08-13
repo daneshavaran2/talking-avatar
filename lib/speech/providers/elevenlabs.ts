@@ -2,6 +2,7 @@ import 'server-only';
 import type { TTSOptions, TTSProvider } from '@/lib/ai/types';
 import { ProviderRequestError } from '@/lib/ai/types';
 import { describeHttpError } from '@/lib/ai/stream-utils';
+import { fetchWithRetry, logRetry } from '@/lib/http/retry';
 import { toPersianDigits } from '@/lib/text/persian';
 
 const BASE = 'https://api.elevenlabs.io/v1';
@@ -36,7 +37,8 @@ export class ElevenLabsProvider implements TTSProvider {
 
     const format = options.format === 'pcm16' ? 'pcm_24000' : 'mp3_44100_128';
 
-    const response = await fetch(
+    // تلاش مجدد فقط تا پیش از رسیدن اولین بایت صدا امن است (E4).
+    const response = await fetchWithRetry(
       `${BASE}/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=${format}`,
       {
         method: 'POST',
@@ -52,6 +54,7 @@ export class ElevenLabsProvider implements TTSProvider {
         }),
         signal: options.signal,
       },
+      { signal: options.signal, onRetry: logRetry('tts') },
     );
 
     if (!response.ok || !response.body) {

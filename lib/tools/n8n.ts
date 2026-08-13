@@ -5,6 +5,12 @@ import { ProviderNotConfiguredError } from '@/lib/ai/types';
 import { env } from '@/lib/config/env';
 import { enabledToolSchemas, findTool } from '@/lib/tools/registry';
 import { isTimeoutError, withTimeout } from '@/lib/ai/stream-utils';
+import {
+  DEFAULT_RETRY_POLICY,
+  NO_RETRY_POLICY,
+  fetchWithRetry,
+  logRetry,
+} from '@/lib/http/retry';
 
 /**
  * دروازهٔ n8n (§F9).
@@ -45,7 +51,9 @@ export class N8nToolProvider implements ToolProvider {
     const { signal: timedSignal, cleanup } = withTimeout(signal, definition.timeoutMs);
 
     try {
-      const response = await fetch(
+      // مهلت ابزار سقفِ **کل** تلاش‌هاست، نه هر تلاش؛ وگرنه سه تلاش
+      // پنج‌ثانیه‌ای بودجهٔ تأخیر مکالمه را نابود می‌کند (§۱۰.۱).
+      const response = await fetchWithRetry(
         `${this.baseUrl.replace(/\/$/, '')}/webhook/${definition.webhookPath}`,
         {
           method: 'POST',
@@ -55,6 +63,11 @@ export class N8nToolProvider implements ToolProvider {
           },
           body,
           signal: timedSignal,
+        },
+        {
+          signal: timedSignal,
+          policy: definition.idempotent ? DEFAULT_RETRY_POLICY : NO_RETRY_POLICY,
+          onRetry: logRetry('tool'),
         },
       );
 

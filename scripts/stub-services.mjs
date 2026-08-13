@@ -140,6 +140,18 @@ const CHAT_ROUTES = [
     },
   },
   {
+    // ثبت سرنخ فروش — ابزار «نوشتنی». تکرارش دو سرنخ تکراری می‌سازد،
+    // پس نباید تلاش مجدد شود.
+    match: /سرنخ|با من تماس بگیرید/,
+    plan: (message, tools) => {
+      const tool = tools.find((t) => t.function?.name === 'createLead');
+      if (!tool) return { text: 'شمارهٔ تماستان را یادداشت کردم و همکاران تماس می‌گیرند.' };
+      return {
+        toolCalls: [{ name: 'createLead', arguments: { name: 'کاربر آزمون', phone: '09120000000' } }],
+      };
+    },
+  },
+  {
     // مسیر آزمون لایهٔ ۳: ورودی بی‌ضرر است ولی خروجی مدل وارد حوزهٔ
     // پزشکی می‌شود. باید پیش از رسیدن به TTS گرفته شود.
     match: /گلودرد/,
@@ -168,18 +180,25 @@ function planChat(body) {
 
   // دور دوم: نتیجهٔ ابزار در تاریخچه هست، پس پاسخ نهایی ساخته می‌شود.
   if (toolMessage) {
-    let payload = {};
+    let payload = null;
     try {
       payload = JSON.parse(String(toolMessage.content));
     } catch {
-      return { text: 'سرویس قیمت الان در دسترس نیست. کمی بعد دوباره بپرسید.' };
+      payload = null; // محتوای «خطا: …» — یعنی ابزار شکست خورده
     }
-    if (payload.price === undefined) {
-      return { text: 'سرویس قیمت الان در دسترس نیست. کمی بعد دوباره بپرسید.' };
+
+    // §۱۲.۲ — ابزار خراب شد: اعلام صادقانه و ادامهٔ مکالمه.
+    if (!payload) return { text: 'فعلاً به این اطلاعات دسترسی ندارم. کار دیگری از دستم برمی‌آید؟' };
+
+    if (payload.leadId) {
+      return { text: `درخواست شما با شمارهٔ ${payload.leadId} ثبت شد. همکاران تماس می‌گیرند.` };
     }
-    return {
-      text: `قیمت ${payload.productId} برابر ${payload.price} ${payload.currency} است. این عدد لحظه‌ای از سیستم فروش گرفته شد.`,
-    };
+    if (payload.price !== undefined) {
+      return {
+        text: `قیمت ${payload.productId} برابر ${payload.price} ${payload.currency} است. این عدد لحظه‌ای از سیستم فروش گرفته شد.`,
+      };
+    }
+    return { text: 'اطلاعات را گرفتم. چیز دیگری لازم دارید؟' };
   }
 
   for (const route of CHAT_ROUTES) {
@@ -228,6 +247,15 @@ async function readRaw(request) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+/**
+ * خرابی کنترل‌شده برای آزمون تاب‌آوری (§۱۲.۳ / E4).
+ *
+ * آزمون پیش از پرسیدن سؤال، تعداد و نوع خرابی را اعلام می‌کند تا
+ * رفتار تلاش مجدد اپلیکیشن قابل مشاهده باشد. هیچ حدس و نهفتگی‌ای
+ * در کار نیست: خرابی صریحاً درخواست می‌شود.
+ */
+const failure = { remaining: 0, status: 503, path: '/api/chat' };
+
 const server = createServer(async (request, response) => {
   const raw = await readRaw(request);
   const url = (request.url ?? '').split('?')[0];
@@ -236,6 +264,34 @@ const server = createServer(async (request, response) => {
     body = raw ? JSON.parse(raw) : {};
   } catch {
     body = {};
+  }
+
+  if (url === '/__control') {
+    // GET وضعیت فعلی را می‌دهد؛ آزمون از روی «چند خرابی مصرف شد»
+    // می‌فهمد اپلیکیشن چند بار تلاش کرده است.
+    if (request.method === 'GET') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(failure));
+      return;
+    }
+
+    failure.remaining = Number(body.failNext ?? 0);
+    failure.status = Number(body.status ?? 503);
+    failure.path = String(body.path ?? '/api/chat');
+    process.stdout.write(
+      `control ← ${failure.remaining} خرابی ${failure.status} روی ${failure.path}\n`,
+    );
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ ok: true, ...failure }));
+    return;
+  }
+
+  if (failure.remaining > 0 && url === failure.path) {
+    failure.remaining -= 1;
+    process.stdout.write(`خرابی عمدی ${failure.status} روی ${url} (${failure.remaining} مانده)\n`);
+    response.writeHead(failure.status, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ error: 'service unavailable' }));
+    return;
   }
 
   if (url === '/api/embed') {

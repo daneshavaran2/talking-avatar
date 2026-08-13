@@ -80,6 +80,15 @@ const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
 const pageErrors = [];
 page.on('pageerror', (error) => pageErrors.push(error.message));
 
+// محدودیت نرخ اپلیکیشن روی /api/chat فعال است. اگر چند مجموعه آزمون
+// پشت سر هم اجرا شوند ممکن است به سقف بخوریم؛ آن‌وقت دهانی تکان
+// نمی‌خورد چون اصلاً پاسخی تولید نشده. این «شکست» نیست، پس جدا
+// تشخیص داده می‌شود تا نتیجهٔ گمراه‌کننده گزارش نشود.
+let rateLimited = false;
+page.on('response', (response) => {
+  if (response.url().includes('/api/chat') && response.status() === 429) rateLimited = true;
+});
+
 await page.goto(BASE_URL, { waitUntil: 'networkidle' });
 
 const started = await page.evaluate(() => {
@@ -128,6 +137,12 @@ const samples = await page.evaluate(() => {
 });
 
 await browser.close();
+
+if (rateLimited) {
+  console.log('SKIP  اپلیکیشن با ۴۲۹ (محدودیت نرخ) پاسخ داد، پس صدایی تولید نشد.');
+  console.log('      یک دقیقه صبر کنید و دوباره اجرا کنید.');
+  process.exit(0);
+}
 
 // ── تحلیل ──────────────────────────────────────────────────────
 const baseline = samples.slice(0, baselineCount);

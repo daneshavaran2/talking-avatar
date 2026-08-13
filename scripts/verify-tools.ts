@@ -167,6 +167,67 @@ async function main(): Promise<void> {
     assert('پیام خطا ثبت شد', Boolean(timeoutRow?.errorMessage), timeoutRow?.errorMessage ?? '');
   }
 
+  console.log('\n── تلاش مجدد فقط برای ابزار خواندنی (E4) ────');
+
+  // خرابی گذرا روی Workflow: ابزار خواندنی باید دوباره تلاش کند،
+  // ولی ابزار نوشتنی نه — تکرار «ثبت سرنخ» یعنی دو سرنخ تکراری در
+  // سیستم مشتری، ضرری بدتر از خودِ خطای گذرا.
+  const controlUrl = `${N8N_URL}/__control`;
+  const control = await fetch(controlUrl).catch(() => null);
+  if (!control?.ok) {
+    console.log('SKIP  سرور نمونه مسیر /__control ندارد؛ این بخش رد شد.');
+  } else {
+    const breakNext = async (failNext: number, path: string) => {
+      await fetch(controlUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ failNext, status: 503, path }),
+      });
+    };
+    const remaining = async (): Promise<number> =>
+      Number(((await (await fetch(controlUrl)).json()) as { remaining: number }).remaining);
+
+    {
+      await prisma.settings.update({
+        where: { id: 'singleton' },
+        data: { enabledTools: ['getPrice'] },
+      });
+      await breakNext(2, '/webhook/get-price');
+
+      const result = await ask('قیمت محصول بتا چنده؟');
+      assert('ابزار خواندنی: هر دو خرابی مصرف شد', (await remaining()) === 0);
+      assert(
+        'ابزار خواندنی: در نهایت موفق شد',
+        toolEvents(result).some((e) => e.status === 'success'),
+        JSON.stringify(toolEvents(result)),
+      );
+      assert('ابزار خواندنی: پاسخ نهایی دادهٔ واقعی دارد', /4850000/.test(result.text));
+    }
+
+    {
+      await prisma.settings.update({
+        where: { id: 'singleton' },
+        data: { enabledTools: ['createLead'] },
+      });
+      await breakNext(2, '/webhook/create-lead');
+
+      const result = await ask('لطفاً یک سرنخ برای من ثبت کنید');
+      assert('ابزار نوشتنی: فقط یک بار تلاش شد', (await remaining()) === 1, `${await remaining()}`);
+      assert(
+        'ابزار نوشتنی: خطا گزارش شد، تکرار نشد',
+        toolEvents(result).some((e) => e.status === 'error'),
+        JSON.stringify(toolEvents(result)),
+      );
+      assert(
+        'ابزار نوشتنی: مکالمه با اعلام صادقانه ادامه یافت',
+        /دسترسی ندارم/.test(result.text),
+        result.text.slice(0, 70),
+      );
+
+      await breakNext(0, '/webhook/create-lead');
+    }
+  }
+
   // بازگرداندن تنظیمات و پاک‌سازی مکالمهٔ آزمون
   await prisma.settings.update({
     where: { id: 'singleton' },

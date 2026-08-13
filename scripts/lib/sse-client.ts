@@ -42,17 +42,31 @@ export async function sendTurn(options: {
   inputType?: 'text' | 'voice';
   timeoutMs?: number;
 }): Promise<TurnResult> {
-  const response = await fetch(`${options.baseUrl}/api/chat`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      conversationId: options.conversationId,
-      turnId: options.turnId,
-      message: options.message,
-      inputType: options.inputType ?? 'text',
-    }),
-    signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
-  });
+  const post = () =>
+    fetch(`${options.baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        conversationId: options.conversationId,
+        turnId: options.turnId,
+        message: options.message,
+        inputType: options.inputType ?? 'text',
+      }),
+      signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
+    });
+
+  let response = await post();
+
+  // محدودیت نرخ روی /api/chat فعال است (۳۰ در دقیقه). وقتی چند مجموعه
+  // آزمون پشت سر هم اجرا می‌شوند طبیعی است که به سقف بخوریم؛ این
+  // شکست آزمون نیست، پس همان‌قدر که سرور گفته صبر می‌کنیم.
+  for (let attempt = 0; response.status === 429 && attempt < 2; attempt += 1) {
+    const waitSeconds = Number(response.headers.get('retry-after') ?? '5');
+    const waitMs = (Number.isFinite(waitSeconds) ? waitSeconds : 5) * 1000 + 500;
+    console.log(`      (۴۲۹ از محدودیت نرخ — ${Math.round(waitMs / 1000)} ثانیه صبر)`);
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    response = await post();
+  }
 
   const events: SseEvent[] = [];
   if (!response.ok || !response.body) {
