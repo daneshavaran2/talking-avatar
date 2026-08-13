@@ -17,7 +17,9 @@
     "verify:core": "tsx scripts/verify-core.ts",
     "verify": "npm run lint && npm run typecheck && npm run verify:core && npm run verify:lipsync && npm run build",
     "verify:lipsync": "node scripts/verify-lipsync.mjs",
-    "verify:e2e": "node scripts/verify-e2e-lipsync.mjs"
+    "verify:e2e": "node scripts/verify-e2e-lipsync.mjs",
+    "verify:guardrails": "tsx scripts/verify-guardrails.ts",
+    "verify:tools": "tsx scripts/verify-tools.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -14,6 +14,11 @@ import {
   VISEME_SHAPES,
 } from '@/lib/lipsync/visemes';
 import { geometryFromLandmarks, parseFaceGeometry } from '@/lib/lipsync/geometry';
+import {
+  CATEGORY_PATTERNS,
+  INJECTION_PATTERNS,
+  OUTPUT_PATTERNS,
+} from '@/lib/guardrails/patterns';
 
 let failures = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -62,6 +67,36 @@ check('punctuation stripped for matching', normalizeForMatching('قیمت؟ چن
 check('display normalisation keeps ZWNJ', normalizePersian('كتاب‌هاي من').includes('‌'), true);
 check('space before punctuation removed', normalizePersian('سلام ، خوبی'), 'سلام، خوبی');
 check('token estimate', estimateTokens('سلام دنیا'), 3);
+check('alef with madda folded', normalizeForMatching('آدرس منزل'), 'ادرس منزل');
+// پیشوند فعلی «می» با هر دو املا باید به یک رشته برسد، وگرنه
+// کلیدواژه‌ای که با یکی نوشته شده با دیگری تطبیق نمی‌خورد.
+check('mi- prefix glued (ZWNJ form)', normalizeForMatching('توصیه می‌کنم'), 'توصیه میکنم');
+check('mi- prefix glued (spaced form)', normalizeForMatching('توصیه می کنم'), 'توصیه میکنم');
+check('nemi- prefix glued', normalizeForMatching('نمی‌دانم'), 'نمیدانم');
+check('word starting with mi untouched', normalizeForMatching('تیمی که آمد'), 'تیمی که امد');
+
+console.log('\n── Guardrail patterns ────────────────────────');
+{
+  // هر الگو باید با املای طبیعی خودش هم تطبیق بخورد. اگر الگویی
+  // «میکنم» نوشته شده ولی متن واقعی «می‌کنم» است، آن الگو عملاً
+  // مرده است — این بررسی دقیقاً همان اشتباه را می‌گیرد.
+  const tables: Array<[string, string[]]> = [
+    ...Object.entries(CATEGORY_PATTERNS),
+    ['injection', INJECTION_PATTERNS],
+    ...Object.entries(OUTPUT_PATTERNS).map(([k, v]) => [k, v ?? []] as [string, string[]]),
+  ];
+
+  const dead: string[] = [];
+  for (const [table, patterns] of tables) {
+    for (const pattern of patterns) {
+      // املای طبیعی: پیشوند «می»/«نمی» با نیم‌فاصله نوشته می‌شود.
+      const natural = pattern.replace(/(^| )(ن?می)(?=\p{L})/gu, '$1$2‌');
+      const haystack = normalizeForMatching(`قبلش ${natural} بعدش`);
+      if (!haystack.includes(normalizeForMatching(pattern))) dead.push(`${table}: ${pattern}`);
+    }
+  }
+  check('every pattern matches its natural spelling', dead, []);
+}
 
 console.log('\n── Topic classification ──────────────────────');
 check('pricing', classifyTopic('قیمت این محصول چند تومان است؟'), 'pricing');

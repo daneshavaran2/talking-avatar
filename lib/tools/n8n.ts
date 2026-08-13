@@ -4,7 +4,7 @@ import type { ToolCallResult, ToolProvider, ToolSchema } from '@/lib/ai/types';
 import { ProviderNotConfiguredError } from '@/lib/ai/types';
 import { env } from '@/lib/config/env';
 import { enabledToolSchemas, findTool } from '@/lib/tools/registry';
-import { withTimeout } from '@/lib/ai/stream-utils';
+import { isTimeoutError, withTimeout } from '@/lib/ai/stream-utils';
 
 /**
  * دروازهٔ n8n (§F9).
@@ -70,8 +70,8 @@ export class N8nToolProvider implements ToolProvider {
       return { ok: true, data };
     } catch (error) {
       // تفکیک Timeout از خطاهای دیگر، چون پیام کاربر فرق می‌کند (F9.5).
-      const aborted = error instanceof Error && error.name === 'AbortError';
-      const timedOut = aborted && !signal?.aborted;
+      // اگر سیگنال بیرونی لغو شده باشد، این Barge-In است نه کندی سرویس.
+      const timedOut = isTimeoutError(error) && !signal?.aborted;
 
       return {
         ok: false,

@@ -57,6 +57,18 @@ export function normalizePersian(input: string): string {
 }
 
 /**
+ * پیشوند فعلی «می» و «نمی» در فارسی با نیم‌فاصله می‌آید («می‌کنم»)
+ * ولی خیلی‌ها سرِ هم می‌نویسند («میکنم»). چون نیم‌فاصله بالاتر به
+ * فاصله تبدیل شده، این دو املا به دو رشتهٔ متفاوت می‌رسیدند و
+ * کلیدواژه‌ای که با یکی نوشته شده بود با دیگری تطبیق نمی‌خورد.
+ * چسباندن پیشوند، هر دو املا را به یک شکل می‌رساند.
+ */
+const VERB_PREFIX = /(^| )(ن?می) (?=\p{L})/gu;
+
+/** الف با کلاه و همزه‌دار — در جستجو با «ا» یکی گرفته می‌شوند. */
+const ALEF_VARIANTS = /[آأإٱ]/g;
+
+/**
  * نرمال‌سازی «جستجویی» — تهاجمی‌تر: نیم‌فاصله به فاصله، همهٔ ارقام
  * به لاتین، علائم حذف. فقط برای تطبیق کلیدواژه و کلیدِ یکتاسازی
  * استفاده می‌شود، نه برای نمایش.
@@ -71,8 +83,10 @@ export function normalizeForMatching(input: string): string {
     return String(code - base);
   });
   text = text.replace(/[ئ]/g, 'ی');
+  text = text.replace(ALEF_VARIANTS, 'ا');
   text = text.replace(/[^\p{L}\p{N}\s]/gu, ' ');
   text = text.replace(/\s+/g, ' ');
+  text = text.replace(VERB_PREFIX, '$1$2');
 
   return text.trim();
 }
