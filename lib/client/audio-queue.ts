@@ -38,7 +38,13 @@ export type AudioQueueCallbacks = {
   onPlaybackEnd?: () => void;
   /** زمان‌بندی یک جمله — ورودی موتور لیپ‌سینک */
   onSentenceScheduled?: (sentence: ScheduledSentence) => void;
-  onError?: (message: string) => void;
+  /**
+   * TTS در این نوبت از کار افتاد (§۱۲.۲).
+   *
+   * `message` وقتی خالی است که سرویس اصلاً پیکربندی نشده باشد —
+   * آن حالت خرابی نیست و رابط کاربری جای دیگری توضیحش می‌دهد.
+   */
+  onDegraded?: (message: string | null) => void;
 };
 
 export class AudioQueue {
@@ -53,6 +59,28 @@ export class AudioQueue {
   private draining = false;
   private playedAny = false;
   private generation = 0;
+
+  /**
+   * TTS در این نوبت شکست خورده است.
+   *
+   * بدون این پرچم، هر جملهٔ بعدیِ همان پاسخ یک درخواست محکوم‌به‌شکست
+   * می‌فرستد و یک پیام خطای تکراری نشان می‌دهد. با آن، سرویس یک بار
+   * در هر نوبت شانس دارد و کاربر یک بار خبردار می‌شود.
+   */
+  private degraded = false;
+
+  /**
+   * درخواست‌های هم‌زمان TTS.
+   *
+   * جمله‌ها به‌ترتیب پخش می‌شوند، پس فرستادن هم‌زمان همهٔ جمله‌های یک
+   * پاسخ سودی ندارد و فقط یک انفجار درخواست روی سرویس صدا می‌سازد.
+   * یک پنجرهٔ کوچک همان تأخیر ادراکی را می‌دهد و دو فایدهٔ دیگر دارد:
+   * سرویس زیر فشار نمی‌رود، و وقتی خراب است شکستش پیش از فرستادن
+   * بقیهٔ جمله‌ها دیده می‌شود.
+   */
+  private static readonly MAX_IN_FLIGHT = 2;
+  private inFlight = 0;
+  private slotWaiters: Array<() => void> = [];
 
   /**
    * قلاب‌های موتور لیپ‌سینک.
@@ -75,6 +103,11 @@ export class AudioQueue {
 
   get isPlaying(): boolean {
     return this.activeSources.size > 0;
+  }
+
+  /** آیا در این نوبت به «فقط متن» تنزل کرده‌ایم؟ */
+  get isDegraded(): boolean {
+    return this.degraded;
   }
 
   /** ساعت صوتی — مرجع زمانی لیپ‌سینک. */
@@ -110,12 +143,20 @@ export class AudioQueue {
    * شروع می‌شود؛ پخش به‌ترتیب انجام می‌گیرد.
    */
   enqueue(sentence: string, turnId: string, index: number): void {
+    // TTS در این نوبت از کار افتاده؛ کوبیدن دوبارهٔ همان سرویس فقط
+    // تأخیر اضافه می‌کند و چیزی را درست نمی‌کند.
+    if (this.degraded) return;
+
     const generation = this.generation;
     const controller = new AbortController();
     this.controllers.add(controller);
 
-    const promise = this.fetchAndDecode(sentence, turnId, controller)
-      .catch(() => null)
+    const promise = this.fetchWithSlot(sentence, turnId, controller)
+      .catch(() => {
+        // قطعی شبکه یا رمزگشایی ناموفق — همان تنزل، نه سقوط.
+        if (!controller.signal.aborted) this.degrade('صدا موقتاً در دسترس نیست.');
+        return null;
+      })
       .finally(() => {
         this.controllers.delete(controller);
       });
@@ -135,6 +176,12 @@ export class AudioQueue {
 
     for (const controller of this.controllers) controller.abort();
     this.controllers.clear();
+
+    // منتظرانِ نوبتِ درخواست هم آزاد می‌شوند؛ کنترلرشان لغو شده، پس
+    // بلافاصله بیرون می‌آیند و پشت صف قدیمی گیر نمی‌کنند.
+    const waiters = this.slotWaiters;
+    this.slotWaiters = [];
+    for (const wake of waiters) wake();
 
     for (const source of this.activeSources) {
       try {
@@ -157,6 +204,16 @@ export class AudioQueue {
   /** پایان نوبت — آماده‌سازی برای نوبت بعدی بدون قطع صدای فعلی. */
   resetTiming(): void {
     this.playedAny = false;
+    // هر نوبت یک شانس تازه: خرابی گذرای TTS نباید تا بارگذاری مجدد
+    // صفحه صدا را خاموش نگه دارد.
+    this.degraded = false;
+  }
+
+  /** تنزل به «فقط متن» — دقیقاً یک بار در هر نوبت گزارش می‌شود. */
+  private degrade(message: string | null): void {
+    if (this.degraded) return;
+    this.degraded = true;
+    this.callbacks.onDegraded?.(message);
   }
 
   dispose(): void {
@@ -183,6 +240,29 @@ export class AudioQueue {
     return this.context;
   }
 
+  /** یک جای خالی از پنجرهٔ درخواست می‌گیرد و بعد درخواست را می‌فرستد. */
+  private async fetchWithSlot(
+    sentence: string,
+    turnId: string,
+    controller: AbortController,
+  ): Promise<AudioBuffer | null> {
+    if (this.inFlight >= AudioQueue.MAX_IN_FLIGHT) {
+      await new Promise<void>((resolve) => this.slotWaiters.push(resolve));
+    }
+
+    // در فاصلهٔ انتظار ممکن است سرویس خراب شده یا کاربر وسط حرف
+    // پریده باشد؛ در هر دو حالت این درخواست بی‌معنی است.
+    if (this.degraded || controller.signal.aborted) return null;
+
+    this.inFlight += 1;
+    try {
+      return await this.fetchAndDecode(sentence, turnId, controller);
+    } finally {
+      this.inFlight -= 1;
+      this.slotWaiters.shift()?.();
+    }
+  }
+
   private async fetchAndDecode(
     sentence: string,
     turnId: string,
@@ -196,15 +276,19 @@ export class AudioQueue {
     });
 
     if (!response.ok) {
-      // ۵۰۱ یعنی TTS پیکربندی نشده — تنزل به «فقط متن» (§۱۲.۲).
-      if (response.status !== 501) {
-        this.callbacks.onError?.('صدا موقتاً در دسترس نیست.');
-      }
+      // ۵۰۱ یعنی TTS اصلاً پیکربندی نشده؛ آن حالت خرابی نیست و رابط
+      // کاربری جداگانه توضیحش می‌دهد. بقیهٔ کدها خرابی واقعی‌اند (§۱۲.۲).
+      this.degrade(response.status === 501 ? null : 'صدا موقتاً در دسترس نیست.');
       return null;
     }
 
+    // پاسخ ۲۰۰ با بدنهٔ خالی یعنی سرویس صدا وسط کار قطع شده — سرور
+    // هدرها را فرستاده و دیگر نمی‌تواند وضعیت خطا بدهد.
     const bytes = await response.arrayBuffer();
-    if (bytes.byteLength === 0) return null;
+    if (bytes.byteLength === 0) {
+      this.degrade('صدا موقتاً در دسترس نیست.');
+      return null;
+    }
 
     return this.ensureContext().decodeAudioData(bytes);
   }

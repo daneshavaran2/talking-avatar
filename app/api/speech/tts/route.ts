@@ -3,7 +3,14 @@ import { RATE_LIMITS } from '@/lib/config/constants';
 import { ProviderNotConfiguredError } from '@/lib/ai/types';
 import { activeVoiceId, createTTSProvider } from '@/lib/speech/factory';
 import { logServiceError } from '@/lib/observability/log';
-import { badRequest, notImplemented, serverError, tooManyRequests, validationError } from '@/lib/http/errors';
+import {
+  badGateway,
+  badRequest,
+  notImplemented,
+  serverError,
+  tooManyRequests,
+  validationError,
+} from '@/lib/http/errors';
 import { checkRateLimit, clientKey } from '@/lib/http/rate-limit';
 import { ttsRequestSchema } from '@/lib/validation/schemas';
 
@@ -45,34 +52,78 @@ export async function POST(request: NextRequest) {
 
   const voiceId = await activeVoiceId();
 
+  const iterator = provider
+    .synthesizeStream(parsed.data.text, {
+      voiceId: voiceId ?? undefined,
+      format: 'mp3',
+      signal: request.signal,
+    })
+    [Symbol.asyncIterator]();
+
+  /**
+   * اولین قطعه پیش از ساختن پاسخ کشیده می‌شود.
+   *
+   * چرا: به‌محض برگرداندن `Response`، وضعیت ۲۰۰ رفته و دیگر نمی‌شود
+   * خطا اعلام کرد. اگر سرویس صدا اصلاً بالا نیامده باشد، کلاینت یک
+   * پاسخ ۲۰۰ با بدنهٔ خالی می‌گیرد و نمی‌فهمد چیزی خراب شده — پس هر
+   * جملهٔ بعدی هم همان درخواست محکوم را تکرار می‌کند.
+   *
+   * این انتظار تأخیری اضافه نمی‌کند: کلاینت تا نرسیدن اولین بایت
+   * صدا در هر حال چیزی برای پخش ندارد.
+   */
+  let first: IteratorResult<Uint8Array>;
+  try {
+    first = await iterator.next();
+  } catch (error) {
+    if (request.signal.aborted) return new Response(null, { status: 499 });
+    await logServiceError(
+      'tts',
+      'تولید صدا شکست خورد',
+      error instanceof Error ? error.message : String(error),
+      parsed.data.turnId,
+    );
+    return badGateway('سرویس صدا الان در دسترس نیست.');
+  }
+
+  if (first.done) {
+    await logServiceError('tts', 'سرویس صدا هیچ داده‌ای تولید نکرد', undefined, parsed.data.turnId);
+    return badGateway('سرویس صدا الان در دسترس نیست.');
+  }
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      controller.enqueue(first.value);
+
       try {
-        for await (const chunk of provider.synthesizeStream(parsed.data.text, {
-          voiceId: voiceId ?? undefined,
-          format: 'mp3',
-          signal: request.signal,
-        })) {
+        for (;;) {
           if (request.signal.aborted) break;
-          controller.enqueue(chunk);
+          const next = await iterator.next();
+          if (next.done) break;
+          controller.enqueue(next.value);
         }
-        controller.close();
       } catch (error) {
+        // خرابی وسط پخش: هدرها رفته‌اند، پس تنها کار ممکن بستن
+        // استریم است. کلاینت بدنهٔ ناقص را می‌بیند و تنزل می‌کند.
         if (!request.signal.aborted) {
           await logServiceError(
             'tts',
-            'تولید صدا شکست خورد',
+            'جریان صدا وسط کار قطع شد',
             error instanceof Error ? error.message : String(error),
             parsed.data.turnId,
           );
         }
-        // بستن استریم بدون خطا: کلاینت به حالت «فقط متن» تنزل می‌کند (§۱۲.۲).
-        try {
-          controller.close();
-        } catch {
-          /* از قبل بسته شده */
-        }
       }
+
+      try {
+        controller.close();
+      } catch {
+        /* از قبل بسته شده */
+      }
+    },
+
+    // Barge-In: مولد باید بسته شود وگرنه اتصال به سرویس صدا باز می‌ماند.
+    cancel() {
+      void iterator.return?.(undefined);
     },
   });
 

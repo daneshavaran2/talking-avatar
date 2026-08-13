@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { toast } from 'sonner';
 import { AudioQueue } from '@/lib/client/audio-queue';
 import { streamSse } from '@/lib/client/sse-client';
 import {
@@ -88,7 +89,13 @@ export function useConversationEngine() {
           speakingRef.current = false;
           if (!activeTurnRef.current) setState('idle');
         },
-        onError: (message) => setError(message),
+        onDegraded: (message) => {
+          // §۱۲.۲ — خرابی TTS نباید مکالمه را به حالت خطا ببرد؛ متن
+          // باید ادامه پیدا کند. پس یک اعلان کوتاه، نه `setError`.
+          if (message) toast.warning(message, { description: 'پاسخ را به‌صورت متنی می‌بینید.' });
+          // بدون صدا، «صحبت کردن» یعنی جاری شدن متن.
+          if (activeTurnRef.current) setState('speaking');
+        },
       });
     }
     return audioRef.current;

@@ -129,7 +129,23 @@ await page.click(composer);
 await page.fill(composer, QUESTION);
 await page.keyboard.press('Enter');
 
-await page.waitForTimeout(7000);
+// انتظار تطبیقی: تا وقتی دهان آرام نشده صبر می‌کنیم. با زمان ثابت،
+// یک پاسخ بلندتر «شکست» گزارش می‌شد در حالی که فقط هنوز تمام نشده بود.
+const MAX_WAIT_MS = Number(process.env.E2E_MAX_WAIT_MS ?? 25_000);
+const QUIET_MS = 1600;
+const deadline = Date.now() + MAX_WAIT_MS;
+
+await page.waitForTimeout(3000); // فرصت شروع پخش
+while (Date.now() < deadline) {
+  const stillMoving = await page.evaluate((quietSamples) => {
+    const tail = window.__samples.slice(-quietSamples);
+    if (tail.length < quietSamples) return true;
+    return Math.max(...tail) - Math.min(...tail) > 8;
+  }, Math.ceil(QUIET_MS / 45));
+
+  if (!stillMoving) break;
+  await page.waitForTimeout(300);
+}
 
 const samples = await page.evaluate(() => {
   clearInterval(window.__sampler);
