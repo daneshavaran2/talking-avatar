@@ -1,14 +1,22 @@
 'use client';
 
+import { PlayIcon, TriangleAlertIcon, UploadIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Card, Spinner, StatusBadge } from '@/components/admin/ui';
+import { toast } from 'sonner';
+
+import { SectionCard, StatusBadge } from '@/components/admin/ui';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Field, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
 
 /**
  * مدیریت صدای آواتار (§F2).
  *
  * چک‌باکس رضایت اجباری است (§۱۱.۳): بدون آن دکمهٔ آپلود غیرفعال
- * می‌ماند و سرور هم درخواست را رد می‌کند. تأیید با زمان، شناسهٔ
- * کاربر و IP ثبت می‌شود.
+ * می‌ماند و سرور هم درخواست را رد می‌کند.
  */
 
 type VoiceProfile = {
@@ -35,8 +43,9 @@ export function VoicePanel({ onReady }: { onReady?: (ready: boolean) => void } =
   const [ttsConfigured, setTtsConfigured] = useState(true);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [testText, setTestText] = useState('سلام، من دستیار دیجیتال شما هستم. چطور می‌توانم کمکتان کنم؟');
+  const [testText, setTestText] = useState(
+    'سلام، من دستیار دیجیتال شما هستم. چطور می‌توانم کمکتان کنم؟',
+  );
   const [testing, setTesting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -53,7 +62,7 @@ export function VoicePanel({ onReady }: { onReady?: (ready: boolean) => void } =
       setTtsConfigured(body.ttsConfigured);
       onReady?.(body.profile?.status === 'ready');
     } catch {
-      setError('خواندن وضعیت صدا ممکن نشد.');
+      toast.error('خواندن وضعیت صدا ممکن نشد.');
     }
   }, [onReady]);
 
@@ -63,7 +72,6 @@ export function VoicePanel({ onReady }: { onReady?: (ready: boolean) => void } =
 
   const upload = async (file: File) => {
     setBusy(true);
-    setError(null);
 
     try {
       const form = new FormData();
@@ -73,13 +81,14 @@ export function VoicePanel({ onReady }: { onReady?: (ready: boolean) => void } =
       const response = await fetch('/api/admin/voice', { method: 'POST', body: form });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(body?.error ?? 'ساخت صدای اختصاصی ممکن نشد.');
+        toast.error(body?.error ?? 'ساخت صدای اختصاصی ممکن نشد.');
         return;
       }
 
+      toast.success('صدای اختصاصی ساخته شد.');
       await load();
     } catch {
-      setError('آپلود نمونهٔ صدا ممکن نشد.');
+      toast.error('آپلود نمونهٔ صدا ممکن نشد.');
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = '';
@@ -88,7 +97,6 @@ export function VoicePanel({ onReady }: { onReady?: (ready: boolean) => void } =
 
   const runTest = async () => {
     setTesting(true);
-    setError(null);
 
     try {
       const response = await fetch('/api/admin/voice/test', {
@@ -99,7 +107,7 @@ export function VoicePanel({ onReady }: { onReady?: (ready: boolean) => void } =
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(body?.error ?? 'پخش صدای تستی ممکن نشد.');
+        toast.error(body?.error ?? 'پخش صدای تستی ممکن نشد.');
         return;
       }
 
@@ -109,51 +117,62 @@ export function VoicePanel({ onReady }: { onReady?: (ready: boolean) => void } =
       audioRef.current = audio;
       await audio.play();
     } catch {
-      setError('پخش صدای تستی ممکن نشد.');
+      toast.error('پخش صدای تستی ممکن نشد.');
     } finally {
       setTesting(false);
     }
   };
 
+  const canUpload = consent && ttsConfigured && !busy;
+
   return (
-    <Card
+    <SectionCard
       title="صدای آواتار"
       description="یک نمونهٔ صوتی آپلود کنید تا صدای اختصاصی ساخته شود. این کار فقط یک‌بار انجام می‌شود و نتیجه Cache می‌شود."
     >
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         {!ttsConfigured && (
-          <Alert tone="warn">
-            سرویس تبدیل متن به صدا پیکربندی نشده است. ابتدا <code className="latn">TTS_PROVIDER</code>{' '}
-            و کلید آن را در متغیرهای محیطی تنظیم کنید؛ تا آن زمان پاسخ‌ها فقط متنی خواهند بود.
+          <Alert variant="warning">
+            <TriangleAlertIcon />
+            <AlertDescription>
+              سرویس تبدیل متن به صدا پیکربندی نشده است. تا آن زمان پاسخ‌ها فقط متنی‌اند و
+              لیپ‌سینک هم اجرا نمی‌شود (چون صدایی برای هماهنگی وجود ندارد).
+            </AlertDescription>
           </Alert>
         )}
 
         {profile && (
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <StatusBadge status={profile.status} />
-            <span className="text-content-faint latn">{profile.providerName}</span>
+            <span className="text-muted-foreground latn">{profile.providerName}</span>
             {profile.consentAt && (
-              <span className="text-content-faint">
+              <span className="text-muted-foreground">
                 رضایت ثبت‌شده در {new Date(profile.consentAt).toLocaleDateString('fa-IR')}
               </span>
             )}
           </div>
         )}
 
-        {profile?.errorMessage && <Alert tone="error">{profile.errorMessage}</Alert>}
-        {error && <Alert tone="error">{error}</Alert>}
+        {profile?.errorMessage && (
+          <Alert variant="destructive">
+            <TriangleAlertIcon />
+            <AlertDescription>{profile.errorMessage}</AlertDescription>
+          </Alert>
+        )}
 
-        <Alert tone="warn">
-          کلون کردن صدای دیگری بدون اجازهٔ او در بسیاری از کشورها غیرقانونی است و مسئولیت حقوقی
-          ایجاد می‌کند. تأیید شما با زمان، شناسهٔ کاربری و آدرس IP ثبت می‌شود.
+        <Alert variant="warning">
+          <TriangleAlertIcon />
+          <AlertDescription>
+            کلون کردن صدای دیگری بدون اجازهٔ او در بسیاری از کشورها غیرقانونی است و مسئولیت
+            حقوقی ایجاد می‌کند. تأیید شما با زمان، شناسهٔ کاربری و آدرس IP ثبت می‌شود.
+          </AlertDescription>
         </Alert>
 
-        <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-content">
-          <input
-            type="checkbox"
+        <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed">
+          <Checkbox
             checked={consent}
-            onChange={(event) => setConsent(event.target.checked)}
-            className="mt-0.5 h-4 w-4 accent-[#E3A857]"
+            onCheckedChange={(checked) => setConsent(checked === true)}
+            className="mt-0.5"
           />
           {CONSENT_TEXT}
         </label>
@@ -163,7 +182,7 @@ export function VoicePanel({ onReady }: { onReady?: (ready: boolean) => void } =
             ref={inputRef}
             type="file"
             accept="audio/wav,audio/mpeg,audio/mp4,audio/x-m4a"
-            disabled={busy || !consent || !ttsConfigured}
+            disabled={!canUpload}
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) void upload(file);
@@ -171,26 +190,23 @@ export function VoicePanel({ onReady }: { onReady?: (ready: boolean) => void } =
             className="hidden"
             id="voice-file"
           />
-          <label
-            htmlFor="voice-file"
-            className={
-              consent && ttsConfigured && !busy
-                ? 'btn-primary cursor-pointer'
-                : 'btn-primary pointer-events-none opacity-45'
-            }
-          >
-            {busy && <Spinner />}
-            {profile ? 'آپلود نمونهٔ بهتر' : 'آپلود نمونهٔ صدا'}
-          </label>
-          <p className="mt-2 hint">WAV، MP3 یا M4A تا ۲۵ مگابایت — حداقل ۳۰ ثانیه (توصیه: ۶۰ تا ۱۲۰ ثانیه)</p>
+          <Button asChild disabled={!canUpload}>
+            <label htmlFor="voice-file" className={canUpload ? 'cursor-pointer' : 'pointer-events-none opacity-50'}>
+              {busy ? <Spinner /> : <UploadIcon />}
+              {profile ? 'آپلود نمونهٔ بهتر' : 'آپلود نمونهٔ صدا'}
+            </label>
+          </Button>
+          <p className="mt-2 text-xs text-muted-foreground">
+            WAV، MP3 یا M4A تا ۲۵ مگابایت — حداقل ۳۰ ثانیه (توصیه: ۶۰ تا ۱۲۰ ثانیه)
+          </p>
         </div>
 
         <div>
-          <p className="mb-1.5 text-xs font-medium text-content-muted">راهنمای نمونهٔ مناسب</p>
-          <ul className="space-y-1">
+          <p className="mb-1.5 text-xs font-medium text-muted-foreground">راهنمای نمونهٔ مناسب</p>
+          <ul className="flex flex-col gap-1">
             {AUDIO_GUIDE.map((line) => (
-              <li key={line} className="flex gap-1.5 hint">
-                <span className="text-brand">•</span>
+              <li key={line} className="flex gap-1.5 text-xs text-muted-foreground">
+                <span className="text-primary">•</span>
                 {line}
               </li>
             ))}
@@ -198,31 +214,31 @@ export function VoicePanel({ onReady }: { onReady?: (ready: boolean) => void } =
         </div>
 
         {profile?.status === 'ready' && (
-          <div className="rounded-xl border border-line bg-surface-sunken p-3">
-            <label htmlFor="voice-test" className="label">
-              تست صدا
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="voice-test"
-                value={testText}
-                onChange={(event) => setTestText(event.target.value)}
-                maxLength={300}
-                className="field flex-1"
-              />
-              <button
-                type="button"
-                onClick={() => void runTest()}
-                disabled={testing || !testText.trim()}
-                className="btn-ghost shrink-0"
-              >
-                {testing ? <Spinner /> : null}
-                پخش
-              </button>
-            </div>
+          <div className="rounded-xl border bg-muted/40 p-3">
+            <Field>
+              <FieldLabel htmlFor="voice-test">تست صدا</FieldLabel>
+              <div className="flex gap-2">
+                <Input
+                  id="voice-test"
+                  value={testText}
+                  onChange={(event) => setTestText(event.target.value)}
+                  maxLength={300}
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void runTest()}
+                  disabled={testing || !testText.trim()}
+                >
+                  {testing ? <Spinner /> : <PlayIcon />}
+                  پخش
+                </Button>
+              </div>
+            </Field>
           </div>
         )}
       </div>
-    </Card>
+    </SectionCard>
   );
 }

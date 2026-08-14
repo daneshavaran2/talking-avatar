@@ -2,6 +2,7 @@ import 'server-only';
 import type { ChatMessage, LLMOptions, LLMProvider, LLMStreamChunk } from '@/lib/ai/types';
 import { ProviderRequestError } from '@/lib/ai/types';
 import { describeHttpError, readSse, safeJsonParse } from '@/lib/ai/stream-utils';
+import { fetchWithRetry, logRetry } from '@/lib/http/retry';
 
 /**
  * پیاده‌سازی مشترک برای هر سرویسی که API سازگار با OpenAI دارد
@@ -62,15 +63,19 @@ export class OpenAiCompatibleProvider implements LLMProvider {
       body.tool_choice = 'auto';
     }
 
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${this.apiKey}`,
+    const response = await fetchWithRetry(
+      `${this.baseUrl}/chat/completions`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: options.signal,
       },
-      body: JSON.stringify(body),
-      signal: options.signal,
-    });
+      { signal: options.signal, onRetry: logRetry('llm') },
+    );
 
     if (!response.ok || !response.body) {
       throw new ProviderRequestError('llm', await describeHttpError(response), response.status);

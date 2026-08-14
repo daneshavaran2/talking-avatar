@@ -1,9 +1,12 @@
 'use client';
 
-import clsx from 'clsx';
+import { MessagesSquareIcon, ShieldIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
+
+import { Badge } from '@/components/ui/badge';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
+import { cn } from '@/lib/utils';
 import type { ChatMessageView } from '@/lib/client/store';
-import { ChatIcon, ShieldIcon } from '@/components/ui/icons';
 
 /** تاریخچهٔ مکالمهٔ جاری (F4.6). */
 export function MessageList({
@@ -20,7 +23,19 @@ export function MessageList({
   }, [messages, partialTranscript]);
 
   if (messages.length === 0 && !partialTranscript) {
-    return <EmptyState />;
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <MessagesSquareIcon />
+          </EmptyMedia>
+          <EmptyTitle>گفتگو را شروع کنید</EmptyTitle>
+          <EmptyDescription>
+            سؤالتان را تایپ کنید یا میکروفون را روشن کنید و بپرسید.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
   }
 
   return (
@@ -31,9 +46,9 @@ export function MessageList({
 
       {partialTranscript && (
         <div className="flex justify-start">
-          <div className="max-w-[85%] rounded-2xl rounded-ss-md border border-dashed border-brand/40 bg-brand-wash px-4 py-2.5 text-sm text-content-muted">
+          <div className="max-w-[85%] rounded-2xl rounded-ss-md border border-dashed border-primary/40 bg-accent px-4 py-2.5 text-sm text-muted-foreground">
             {partialTranscript}
-            <span className="ms-1 inline-block h-3.5 w-[2px] translate-y-0.5 animate-pulse bg-brand" />
+            <span className="ms-1 inline-block h-3.5 w-px translate-y-0.5 animate-pulse bg-primary" />
           </div>
         </div>
       )}
@@ -51,20 +66,20 @@ function MessageBubble({ message }: { message: ChatMessageView }) {
   }
 
   return (
-    <div className={clsx('flex animate-fade-up', isUser ? 'justify-start' : 'justify-end')}>
+    <div className={cn('flex animate-fade-up', isUser ? 'justify-start' : 'justify-end')}>
       <div
-        className={clsx(
-          'max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-7',
+        className={cn(
+          'flex max-w-[85%] flex-col gap-2 rounded-2xl px-4 py-2.5 text-sm leading-7',
           isUser
-            ? 'rounded-ss-md bg-surface-raised text-content'
+            ? 'rounded-ss-md bg-secondary text-secondary-foreground'
             : message.refused
-              ? 'rounded-se-md border border-line bg-surface text-content-muted'
-              : 'rounded-se-md bg-brand-wash text-content ring-1 ring-brand/25',
+              ? 'rounded-se-md border bg-card text-muted-foreground'
+              : 'rounded-se-md bg-accent text-accent-foreground',
         )}
       >
         {message.refused && (
-          <span className="mb-1.5 flex items-center gap-1.5 text-[11px] text-content-faint">
-            <ShieldIcon className="h-3.5 w-3.5" />
+          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <ShieldIcon className="size-3.5" />
             خارج از حوزهٔ پاسخ‌گویی
           </span>
         )}
@@ -72,17 +87,14 @@ function MessageBubble({ message }: { message: ChatMessageView }) {
         <p className="whitespace-pre-wrap">{message.content}</p>
 
         {message.sources && message.sources.length > 0 && (
-          <ul className="mt-2 flex flex-wrap gap-1.5 border-t border-line/60 pt-2">
+          <div className="flex flex-wrap gap-1.5 border-t pt-2">
             {message.sources.map((source, index) => (
-              <li
-                key={`${source.title}-${source.page}-${index}`}
-                className="rounded-md bg-surface-sunken px-2 py-0.5 text-[11px] text-content-faint"
-              >
+              <Badge key={`${source.title}-${source.page}-${index}`} variant="secondary">
                 {source.title}
                 {source.page ? ` — ص ${source.page}` : ''}
-              </li>
+              </Badge>
             ))}
-          </ul>
+          </div>
         )}
       </div>
     </div>
@@ -91,27 +103,18 @@ function MessageBubble({ message }: { message: ChatMessageView }) {
 
 function ThinkingBubble() {
   return (
-    <div className="flex justify-end">
-      <div className="flex items-center gap-1.5 rounded-2xl rounded-se-md bg-brand-wash px-4 py-3 ring-1 ring-brand/25">
+    // برای صفحه‌خوان پنهان است چون نشانگر وضعیت بالای صفحه همین را
+    // اعلام می‌کند؛ اینجا فقط یک نشانهٔ دیداری است.
+    <div className="flex justify-end" data-slot="thinking" aria-hidden="true">
+      <div className="flex items-center gap-1.5 rounded-2xl rounded-se-md bg-accent px-4 py-3">
         {[0, 1, 2].map((index) => (
           <span
             key={index}
-            className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand"
+            className="size-1.5 animate-pulse rounded-full bg-primary"
             style={{ animationDelay: `${index * 160}ms` }}
           />
         ))}
       </div>
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center gap-3 py-10 text-center">
-      <ChatIcon className="h-9 w-9 text-content-faint/60" />
-      <p className="max-w-[15rem] text-xs leading-relaxed text-content-faint">
-        سؤالتان را بپرسید — می‌توانید تایپ کنید یا میکروفون را روشن کنید.
-      </p>
     </div>
   );
 }

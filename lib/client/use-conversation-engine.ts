@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { toast } from 'sonner';
 import { AudioQueue } from '@/lib/client/audio-queue';
-import { streamSse } from '@/lib/client/sse-client';
+import { SseHttpError, streamSse } from '@/lib/client/sse-client';
+import { isRetryableStatus } from '@/lib/http/retry';
 import {
   BrowserSpeechRecognizer,
   isSpeechRecognitionSupported,
@@ -23,6 +25,43 @@ import { newId, useConversation, type RuntimeConfig } from '@/lib/client/store';
  *   /api/conversation/interrupt → آزادسازی منابع سرور
  */
 
+/** یک تلاش برای گرفتن پاسخ چطور تمام شد. */
+type TurnOutcome =
+  /** پایان طبیعی — چه با پاسخ، چه با خطای اعلام‌شدهٔ سرور */
+  | 'completed'
+  /** Barge-In یا نوبت منسوخ */
+  | 'aborted'
+  /** اتصال وسط کار قطع شد — تنها حالتی که ارزش تلاش مجدد دارد */
+  | 'dropped';
+
+/** تعداد کل تلاش‌ها، شامل تلاش اول (§۱۲.۲). */
+const RECONNECT_ATTEMPTS = 3;
+
+/**
+ * انتظار پیش از تلاش بعدی.
+ *
+ * اگر مرورگر بداند شبکه قطع است، انتظار بی‌هدف بی‌فایده است: منتظر
+ * رویداد `online` می‌مانیم تا لحظه‌ای که واقعاً برگشت تلاش کنیم.
+ */
+async function waitBeforeReconnect(attempt: number): Promise<void> {
+  const backoffMs = Math.min(4000, 600 * 2 ** attempt);
+
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        window.removeEventListener('online', done);
+        clearTimeout(timer);
+        resolve();
+      };
+      // سقف انتظار تا وضعیت برای همیشه معلق نماند.
+      const timer = setTimeout(done, 20_000);
+      window.addEventListener('online', done, { once: true });
+    });
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, backoffMs));
+}
+
 export function useConversationEngine() {
   const store = useConversation();
   const {
@@ -38,6 +77,7 @@ export function useConversationEngine() {
     markRefused,
     finishTurn,
     abortTurn,
+    restartTurn,
     setPartialTranscript,
     setMicEnabled,
     setMicError,
@@ -88,7 +128,13 @@ export function useConversationEngine() {
           speakingRef.current = false;
           if (!activeTurnRef.current) setState('idle');
         },
-        onError: (message) => setError(message),
+        onDegraded: (message) => {
+          // §۱۲.۲ — خرابی TTS نباید مکالمه را به حالت خطا ببرد؛ متن
+          // باید ادامه پیدا کند. پس یک اعلان کوتاه، نه `setError`.
+          if (message) toast.warning(message, { description: 'پاسخ را به‌صورت متنی می‌بینید.' });
+          // بدون صدا، «صحبت کردن» یعنی جاری شدن متن.
+          if (activeTurnRef.current) setState('speaking');
+        },
       });
     }
     return audioRef.current;
@@ -97,6 +143,9 @@ export function useConversationEngine() {
 
   useEffect(() => {
     return () => {
+      // ترتیب مهم است: اول نوبت فعال باطل می‌شود، بعد جریان لغو.
+      // وگرنه حلقهٔ اتصال مجدد پس از Unmount هم درخواست می‌فرستد.
+      activeTurnRef.current = null;
       audioRef.current?.dispose();
       recognizerRef.current?.stop();
       micStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -147,7 +196,7 @@ export function useConversationEngine() {
         interrupt({ notifyServer: false });
       }
 
-      const turnId = newId();
+      let turnId = newId();
       activeTurnRef.current = turnId;
       startTurn(turnId, message);
       setPartialTranscript('');
@@ -155,20 +204,45 @@ export function useConversationEngine() {
       audio?.resetTiming();
       void audio?.unlock();
 
+      const ttsAvailable = config?.speech.ttsAvailable ?? false;
+
+      /**
+       * پایان نوبت با خطا.
+       *
+       * `abortTurn` پیش از `setError` لازم است: بدون آن، حباب خالی
+       * «در حال فکر کردن» با `pending: true` در تاریخچه می‌ماند و در
+       * نوبت‌های بعدی هم دیده می‌شود. پاسخ نیمه‌کاره اگر متنی داشته
+       * باشد حفظ می‌شود.
+       */
+      const failTurn = (reason: string) => {
+        activeTurnRef.current = null;
+        abortTurn();
+        setError(reason);
+      };
+
+      /**
+       * یک تلاش کامل برای گرفتن پاسخ.
+       *
+       * برمی‌گرداند که نوبت چطور تمام شد تا حلقهٔ بیرونی بداند
+       * ارزش اتصال مجدد دارد یا نه (§۱۲.۲).
+       */
+      const attemptTurn = async (
+        attemptTurnId: string,
+        retryOfTurnId?: string,
+      ): Promise<TurnOutcome> => {
       const controller = new AbortController();
       streamAbortRef.current = controller;
 
-      const ttsAvailable = config?.speech.ttsAvailable ?? false;
       let sawFirstToken = false;
 
       try {
         for await (const event of streamSse(
           '/api/chat',
-          { conversationId, turnId, message, inputType, vadStartAt },
+          { conversationId, turnId: attemptTurnId, message, inputType, vadStartAt, retryOfTurnId },
           controller.signal,
         )) {
           // رویدادهای نوبت منسوخ Drop می‌شوند (F8.3).
-          if (activeTurnRef.current !== turnId) break;
+          if (activeTurnRef.current !== attemptTurnId) return 'aborted';
 
           switch (event.event) {
             case 'token': {
@@ -215,35 +289,94 @@ export function useConversationEngine() {
             case 'aborted': {
               activeTurnRef.current = null;
               abortTurn();
-              return;
+              return 'aborted';
             }
 
             case 'error': {
               const data = event.data as { error: string };
-              activeTurnRef.current = null;
-              setError(data.error);
-              return;
+              failTurn(data.error);
+              return 'completed';
             }
 
             case 'done': {
               activeTurnRef.current = null;
-              finishTurn(turnId);
+              finishTurn(attemptTurnId);
               // اگر صدا هنوز در حال پخش است، وضعیت `speaking` می‌ماند
               // تا صف خالی شود.
               if (speakingRef.current) setState('speaking');
-              return;
+              return 'completed';
             }
 
             default:
               break;
           }
         }
+
+        // جریان بدون هیچ رویداد پایانی تمام شد — یعنی اتصال وسط کار
+        // قطع شده. بدون این شاخه، نوبت برای همیشه در حالت «در حال
+        // فکر کردن» می‌ماند و کاربر هیچ‌وقت نمی‌فهمد چه شد.
+        //
+        // `streamSse` هنگام لغو هم عادی تمام می‌شود، پس اول باید
+        // مطمئن شویم این پایان از سر لغو نبوده وگرنه پس از Unmount
+        // یا Barge-In درخواست تازه می‌فرستیم.
+        return controller.signal.aborted ? 'aborted' : 'dropped';
       } catch (error) {
-        if (controller.signal.aborted) return;
-        activeTurnRef.current = null;
-        setError(error instanceof Error ? error.message : 'ارتباط با سرور قطع شد.');
+        if (controller.signal.aborted) return 'aborted';
+
+        // خطای سمت سرور پیام روشنی دارد؛ فقط خطای شبکه و ۵xx ارزش
+        // تلاش مجدد دارند. ۴۲۹ عمداً مستثناست: پنجرهٔ محدودیت نرخ
+        // یک دقیقه است و Backoff چندصد میلی‌ثانیه‌ای فقط سه بار به
+        // همان دیوار می‌خورد و پیام دقیق سرور را هم دور می‌ریزد.
+        if (error instanceof SseHttpError && !isRetryableStatus(error.status)) {
+          failTurn(error.message);
+          return 'completed';
+        }
+        if (error instanceof SseHttpError && error.status === 429) {
+          failTurn(error.message);
+          return 'completed';
+        }
+        return 'dropped';
       } finally {
         if (streamAbortRef.current === controller) streamAbortRef.current = null;
+      }
+      };
+
+      // ── حلقهٔ اتصال مجدد (§۱۲.۲ و فاز ۴) ──────────────────────
+      let previousTurnId: string | undefined;
+
+      for (let attempt = 0; ; attempt += 1) {
+        const outcome = await attemptTurn(turnId, previousTurnId);
+        if (outcome !== 'dropped') return;
+
+        // کاربر در این فاصله سؤال تازه‌ای پرسیده — این نوبت دیگر مال
+        // ما نیست و نباید نه خطایی بدهد نه نوبت جدید را خراب کند.
+        if (activeTurnRef.current !== turnId) return;
+
+        if (attempt >= RECONNECT_ATTEMPTS - 1) {
+          failTurn('ارتباط با سرور قطع شد. لطفاً دوباره بپرسید.');
+          return;
+        }
+
+        // صدای نیمه‌کاره باید همین‌جا قطع شود، وگرنه بقیه‌اش وسط
+        // «در حال اتصال مجدد» پخش می‌شود. `resetTiming` هم لازم است:
+        // بدون آن صف هنوز فکر می‌کند صدای این نوبت پخش شده، پس در
+        // تلاش دوم نه `onFirstAudio` می‌دهد و نه — اگر TTS در تلاش
+        // اول خراب شده بود — اصلاً درخواستی می‌فرستد.
+        audio?.stopAll();
+        audio?.resetTiming();
+        setState('reconnecting');
+
+        await waitBeforeReconnect(attempt);
+        if (activeTurnRef.current !== turnId) return; // کاربر ادامه داده
+
+        // نوبت تازه با شناسهٔ تازه: سرور نوبت قطع‌شده را نمی‌تواند
+        // از سر بگیرد، پس همان پرسش از نو پرسیده می‌شود و پاسخ
+        // نیمه‌کاره پاک می‌شود تا به پاسخ جدید نچسبد.
+        const nextTurnId = newId();
+        restartTurn(turnId, nextTurnId);
+        activeTurnRef.current = nextTurnId;
+        previousTurnId = turnId;
+        turnId = nextTurnId;
       }
     },
     [
@@ -258,6 +391,7 @@ export function useConversationEngine() {
       markRefused,
       finishTurn,
       abortTurn,
+      restartTurn,
       setError,
       setState,
       setPartialTranscript,
@@ -378,7 +512,7 @@ export function useConversationEngine() {
     return () => window.clearInterval(timer);
   }, [config?.kioskResetSeconds, resetConversation]);
 
-  return { sendMessage, toggleMic, interrupt, resetConversation };
+  return { sendMessage, toggleMic, interrupt, resetConversation, audio };
 }
 
 function reportTiming(turnId: string | null, timings: Record<string, number>): void {

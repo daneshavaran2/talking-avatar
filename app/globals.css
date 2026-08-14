@@ -37,8 +37,90 @@
 }
 
 @layer base {
+  /**
+   * توکن‌های رنگ به قرارداد shadcn/ui.
+   *
+   * جهت‌گیری طراحی: خنثای گرم و کم‌رنگ با یک لهجهٔ کهربایی. عمداً از
+   * آبیِ پیش‌فرضِ محصولات هوش مصنوعی فاصله گرفته‌ایم — این محصول یک
+   * «انسان» دیجیتال است و باید گرم به نظر برسد، نه فنی.
+   */
   :root {
-    --font-vazir: 'Vazirmatn';
+    --background: 0 0% 100%;
+    --foreground: 24 10% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 24 10% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 24 10% 10%;
+
+    --primary: 32 64% 42%;
+    --primary-foreground: 40 60% 98%;
+
+    --secondary: 30 8% 96%;
+    --secondary-foreground: 24 10% 18%;
+
+    --muted: 30 8% 96%;
+    --muted-foreground: 25 6% 45%;
+
+    --accent: 32 50% 95%;
+    --accent-foreground: 32 64% 28%;
+
+    --destructive: 0 72% 46%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 24 8% 90%;
+    --input: 24 8% 90%;
+    --ring: 32 64% 45%;
+
+    --radius: 0.75rem;
+
+    /* وضعیت‌های مکالمه — بخشی از زبان طراحی، نه رنگ دلخواه */
+    --state-idle: 25 6% 55%;
+    --state-listening: 165 62% 40%;
+    --state-thinking: 32 76% 48%;
+    --state-speaking: 212 72% 52%;
+    --state-error: 0 72% 52%;
+  }
+
+  .dark {
+    --background: 220 16% 6%;
+    --foreground: 210 16% 93%;
+
+    --card: 220 14% 9%;
+    --card-foreground: 210 16% 93%;
+
+    --popover: 220 14% 10%;
+    --popover-foreground: 210 16% 93%;
+
+    --primary: 36 72% 62%;
+    --primary-foreground: 220 20% 10%;
+
+    --secondary: 220 12% 15%;
+    --secondary-foreground: 210 16% 90%;
+
+    --muted: 220 12% 14%;
+    --muted-foreground: 215 12% 60%;
+
+    --accent: 36 40% 16%;
+    --accent-foreground: 36 72% 72%;
+
+    --destructive: 0 62% 56%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 12% 18%;
+    --input: 220 12% 18%;
+    --ring: 36 72% 55%;
+
+    --state-idle: 215 12% 52%;
+    --state-listening: 165 66% 46%;
+    --state-thinking: 36 72% 60%;
+    --state-speaking: 212 76% 62%;
+    --state-error: 0 68% 62%;
+  }
+
+  * {
+    @apply border-border;
   }
 
   html {
@@ -46,13 +128,12 @@
   }
 
   body {
-    @apply bg-ink text-content antialiased;
-    font-family: var(--font-vazir), Tahoma, system-ui, sans-serif;
-    /* اعداد فارسی در متن‌های فارسی طبیعی‌تر خوانده می‌شوند. */
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Vazirmatn', Tahoma, system-ui, sans-serif;
     font-feature-settings: 'ss01';
   }
 
-  /* اعداد لاتین در جدول‌ها و آمار خواناتر است؛ آن‌ها را استثنا می‌کنیم. */
+  /* اعداد لاتین در جدول‌ها و آمار خواناتر است؛ استثنا می‌کنیم. */
   .latn {
     font-feature-settings: normal;
     direction: ltr;
@@ -60,11 +141,7 @@
   }
 
   ::selection {
-    @apply bg-brand/30 text-content;
-  }
-
-  :focus-visible {
-    @apply outline-none ring-2 ring-brand/70 ring-offset-2 ring-offset-ink;
+    @apply bg-primary/25;
   }
 
   ::-webkit-scrollbar {
@@ -77,48 +154,11 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply rounded-full border-4 border-solid border-transparent bg-line-strong bg-clip-content;
+    @apply rounded-full border-4 border-solid border-transparent bg-border bg-clip-content;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-content-faint bg-clip-content;
-  }
-}
-
-@layer components {
-  .panel {
-    @apply rounded-2xl border border-line bg-surface shadow-panel;
-  }
-
-  .field {
-    @apply w-full rounded-xl border border-line bg-surface-sunken px-4 py-2.5 text-sm
-           text-content placeholder:text-content-faint
-           focus:border-brand/60 focus:outline-none focus:ring-2 focus:ring-brand/25;
-  }
-
-  .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm
-           font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45;
-  }
-
-  .btn-primary {
-    @apply btn bg-brand text-ink hover:bg-brand-soft;
-  }
-
-  .btn-ghost {
-    @apply btn border border-line bg-surface-raised text-content hover:border-line-strong hover:bg-surface;
-  }
-
-  .btn-danger {
-    @apply btn border border-state-error/40 bg-state-error/10 text-state-error hover:bg-state-error/20;
-  }
-
-  .label {
-    @apply mb-1.5 block text-sm font-medium text-content-muted;
-  }
-
-  .hint {
-    @apply text-xs leading-relaxed text-content-faint;
+    @apply bg-muted-foreground/50 bg-clip-content;
   }
 }
 

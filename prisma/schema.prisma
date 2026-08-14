@@ -25,6 +25,9 @@ model AvatarProfile {
   errorMessage  String?
   landmarksJson Json? // نقاط کلیدی چهره
   embeddingJson Json? // بردار ویژگی چهره
+  // هندسهٔ دهان و چشم‌ها برای لیپ‌سینک (§F7). از نقاط کلیدی ساخته
+  // می‌شود یا مدیر دستی تنظیمش می‌کند.
+  faceGeometry  Json?
   idleLoopUrl   String? // حلقهٔ Idle تولیدشده
   width         Int?
   height        Int?

@@ -54,6 +54,17 @@ export function serverError(message = 'خطای داخلی سرور. لطفاً 
   return jsonError(message, 500, 'internal_error');
 }
 
+/**
+ * سرویس بیرونی در دسترس نبود یا پاسخ نداد.
+ *
+ * جدا از ۵۰۰ و ۵۰۱ نگه داشته شده چون کلاینت با هرکدام کار متفاوتی
+ * می‌کند: ۵۰۱ یعنی «اصلاً پیکربندی نشده» (تنزل دائمی و بی‌صدا)، ولی
+ * ۵۰۲ یعنی «الان خراب است» و باید به کاربر خبر داده شود (§۱۲.۲).
+ */
+export function badGateway(message = 'سرویس بیرونی در دسترس نیست.') {
+  return jsonError(message, 502, 'upstream_unavailable');
+}
+
 /** خطای اعتبارسنجی Zod را به پیام فارسی قابل نمایش تبدیل می‌کند. */
 export function validationError(error: ZodError) {
   const first = error.issues[0];

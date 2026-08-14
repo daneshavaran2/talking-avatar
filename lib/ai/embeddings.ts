@@ -3,6 +3,7 @@ import type { EmbeddingKind, EmbeddingProvider } from '@/lib/ai/types';
 import { ProviderNotConfiguredError, ProviderRequestError } from '@/lib/ai/types';
 import { env } from '@/lib/config/env';
 import { describeHttpError } from '@/lib/ai/stream-utils';
+import { fetchWithRetry, logRetry } from '@/lib/http/retry';
 
 /**
  * تعبیه‌سازی متن برای RAG.
@@ -37,7 +38,7 @@ class GeminiEmbeddingProvider implements EmbeddingProvider {
     if (texts.length === 0) return [];
 
     const taskType = kind === 'query' ? 'RETRIEVAL_QUERY' : 'RETRIEVAL_DOCUMENT';
-    const response = await fetch(
+    const response = await fetchWithRetry(
       `${this.baseUrl}/models/${encodeURIComponent(this.model)}:batchEmbedContents`,
       {
         method: 'POST',
@@ -52,6 +53,7 @@ class GeminiEmbeddingProvider implements EmbeddingProvider {
         }),
         signal,
       },
+      { signal, onRetry: logRetry('embedding') },
     );
 
     if (!response.ok) {
@@ -79,12 +81,16 @@ class OpenAiEmbeddingProvider implements EmbeddingProvider {
   async embed(texts: string[], _kind: EmbeddingKind, signal?: AbortSignal): Promise<number[][]> {
     if (texts.length === 0) return [];
 
-    const response = await fetch(`${this.baseUrl}/embeddings`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` },
-      body: JSON.stringify({ model: this.model, input: texts, dimensions: this.dimensions }),
-      signal,
-    });
+    const response = await fetchWithRetry(
+      `${this.baseUrl}/embeddings`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` },
+        body: JSON.stringify({ model: this.model, input: texts, dimensions: this.dimensions }),
+        signal,
+      },
+      { signal, onRetry: logRetry('embedding') },
+    );
 
     if (!response.ok) {
       throw new ProviderRequestError(
@@ -113,12 +119,16 @@ class OllamaEmbeddingProvider implements EmbeddingProvider {
   async embed(texts: string[], _kind: EmbeddingKind, signal?: AbortSignal): Promise<number[][]> {
     if (texts.length === 0) return [];
 
-    const response = await fetch(`${this.baseUrl}/api/embed`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model: this.model, input: texts }),
-      signal,
-    });
+    const response = await fetchWithRetry(
+      `${this.baseUrl}/api/embed`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: this.model, input: texts }),
+        signal,
+      },
+      { signal, onRetry: logRetry('embedding') },
+    );
 
     if (!response.ok) {
       throw new ProviderRequestError(

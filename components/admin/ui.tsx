@@ -1,12 +1,25 @@
 'use client';
 
-import clsx from 'clsx';
 import type { ReactNode } from 'react';
-import { AlertIcon, CheckIcon } from '@/components/ui/icons';
 
-/** اجزای مشترک پنل مدیریت. */
+import { Badge } from '@/components/ui/badge';
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
-export function Card({
+/**
+ * اجزای دامنه‌ای پنل مدیریت.
+ * روی اجزای shadcn ساخته شده‌اند و فقط چیزی را اضافه می‌کنند که
+ * مخصوص این محصول است: کارت آماری، نمودار درصدی، و برچسب وضعیت.
+ */
+
+export function SectionCard({
   title,
   description,
   action,
@@ -20,18 +33,18 @@ export function Card({
   className?: string;
 }) {
   return (
-    <section className={clsx('panel p-5', className)}>
+    <Card className={className}>
       {(title || action) && (
-        <header className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            {title && <h2 className="text-sm font-semibold text-content">{title}</h2>}
-            {description && <p className="mt-1 hint">{description}</p>}
+        <CardHeader className={cn(action && 'grid grid-cols-[1fr_auto] items-start')}>
+          <div className="flex flex-col gap-1.5">
+            {title && <CardTitle>{title}</CardTitle>}
+            {description && <CardDescription>{description}</CardDescription>}
           </div>
-          {action}
-        </header>
+          {action && <CardAction>{action}</CardAction>}
+        </CardHeader>
       )}
-      {children}
-    </section>
+      <CardContent className={cn(!title && !action && 'pt-5')}>{children}</CardContent>
+    </Card>
   );
 }
 
@@ -49,25 +62,27 @@ export function StatCard({
   tone?: 'default' | 'good' | 'warn' | 'bad';
 }) {
   const toneClass = {
-    default: 'text-content',
+    default: 'text-foreground',
     good: 'text-state-listening',
     warn: 'text-state-thinking',
     bad: 'text-state-error',
   }[tone];
 
   return (
-    <div className="panel p-4">
-      <p className="text-xs text-content-muted">{label}</p>
-      <p className={clsx('mt-2 text-2xl font-semibold tabular-nums', toneClass)}>
-        <span className="latn">{value}</span>
-        {suffix && <span className="ms-1 text-sm font-normal text-content-faint">{suffix}</span>}
-      </p>
-      {hint && <p className="mt-1 text-[11px] text-content-faint">{hint}</p>}
-    </div>
+    <Card>
+      <CardContent className="flex flex-col gap-1 p-4">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className={cn('text-2xl font-semibold tabular-nums', toneClass)}>
+          <span className="latn">{value}</span>
+          {suffix && <span className="ms-1 text-sm font-normal text-muted-foreground">{suffix}</span>}
+        </p>
+        {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+      </CardContent>
+    </Card>
   );
 }
 
-/** نمودار میله‌ای درصدی (§۱۰.۲) — بدون کتابخانهٔ نمودار. */
+/** نمودار میله‌ای درصدی (§۱۰.۲). */
 export function BarList({
   items,
   onSelect,
@@ -80,43 +95,49 @@ export function BarList({
   emptyText?: string;
 }) {
   if (items.length === 0) {
-    return <p className="hint py-6 text-center">{emptyText}</p>;
+    return <p className="py-6 text-center text-xs text-muted-foreground">{emptyText}</p>;
   }
 
   return (
-    <ul className="space-y-2.5">
+    <ul className="flex flex-col gap-2.5">
       {items.map((item) => {
         const active = selected === item.key;
-        const Row = onSelect ? 'button' : 'div';
+        const content = (
+          <>
+            <div className="mb-1 flex items-baseline justify-between gap-3 text-xs">
+              <span>{item.label}</span>
+              <span className="tabular-nums text-muted-foreground latn">
+                {item.percent}٪ ({item.count})
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn(
+                  'h-full rounded-full transition-[width] duration-500',
+                  active ? 'bg-primary' : 'bg-primary/70',
+                )}
+                style={{ width: `${Math.max(2, item.percent)}%` }}
+              />
+            </div>
+          </>
+        );
 
         return (
           <li key={item.key}>
-            <Row
-              {...(onSelect
-                ? { type: 'button' as const, onClick: () => onSelect(item.key) }
-                : {})}
-              className={clsx(
-                'w-full text-start',
-                onSelect && 'cursor-pointer rounded-lg p-1.5 transition-colors hover:bg-surface-raised',
-                active && 'bg-surface-raised',
-              )}
-            >
-              <div className="mb-1 flex items-baseline justify-between gap-3 text-xs">
-                <span className="text-content">{item.label}</span>
-                <span className="tabular-nums text-content-muted latn">
-                  {item.percent}٪ ({item.count})
-                </span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-surface-sunken">
-                <div
-                  className={clsx(
-                    'h-full rounded-full transition-[width] duration-500',
-                    active ? 'bg-brand-soft' : 'bg-brand/70',
-                  )}
-                  style={{ width: `${Math.max(2, item.percent)}%` }}
-                />
-              </div>
-            </Row>
+            {onSelect ? (
+              <button
+                type="button"
+                onClick={() => onSelect(item.key)}
+                className={cn(
+                  'w-full rounded-md p-1.5 text-start transition-colors hover:bg-muted/60',
+                  active && 'bg-muted',
+                )}
+              >
+                {content}
+              </button>
+            ) : (
+              <div className="p-1.5">{content}</div>
+            )}
           </li>
         );
       })}
@@ -124,111 +145,24 @@ export function BarList({
   );
 }
 
-export function StatusBadge({
-  status,
-}: {
-  status: 'pending' | 'processing' | 'ready' | 'indexed' | 'error' | string;
-}) {
-  const map: Record<string, { label: string; className: string }> = {
-    pending: { label: 'در صف', className: 'bg-surface-raised text-content-muted' },
-    processing: { label: 'در حال پردازش', className: 'bg-state-thinking/15 text-state-thinking' },
-    ready: { label: 'آماده', className: 'bg-state-listening/15 text-state-listening' },
-    indexed: { label: 'ایندکس شد', className: 'bg-state-listening/15 text-state-listening' },
-    error: { label: 'خطا', className: 'bg-state-error/15 text-state-error' },
-  };
+const STATUS_MAP: Record<
+  string,
+  { label: string; variant: 'secondary' | 'success' | 'warning' | 'destructive' }
+> = {
+  pending: { label: 'در صف', variant: 'secondary' },
+  processing: { label: 'در حال پردازش', variant: 'warning' },
+  ready: { label: 'آماده', variant: 'success' },
+  indexed: { label: 'ایندکس شد', variant: 'success' },
+  error: { label: 'خطا', variant: 'destructive' },
+};
 
-  const entry = map[status] ?? { label: status, className: 'bg-surface-raised text-content-muted' };
+export function StatusBadge({ status }: { status: string }) {
+  const entry = STATUS_MAP[status] ?? { label: status, variant: 'secondary' as const };
 
   return (
-    <span
-      className={clsx(
-        'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
-        entry.className,
-      )}
-    >
-      {status === 'processing' && (
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
-      )}
+    <Badge variant={entry.variant}>
+      {status === 'processing' && <span className="size-1.5 animate-pulse rounded-full bg-current" />}
       {entry.label}
-    </span>
-  );
-}
-
-export function Toggle({
-  checked,
-  onChange,
-  label,
-  description,
-  disabled,
-}: {
-  checked: boolean;
-  onChange: (next: boolean) => void;
-  label: string;
-  description?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <label
-      className={clsx(
-        'flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-surface-sunken p-3 transition-colors',
-        checked && 'border-brand/40 bg-brand-wash',
-        disabled && 'cursor-not-allowed opacity-50',
-      )}
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-        className="sr-only"
-      />
-      <span
-        className={clsx(
-          'mt-0.5 flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded border transition-colors',
-          checked ? 'border-brand bg-brand text-ink' : 'border-line-strong bg-surface',
-        )}
-        style={{ height: '1.125rem', width: '1.125rem' }}
-      >
-        {checked && <CheckIcon className="h-3 w-3" />}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-sm text-content">{label}</span>
-        {description && <span className="mt-0.5 block hint">{description}</span>}
-      </span>
-    </label>
-  );
-}
-
-export function Alert({
-  tone = 'info',
-  children,
-}: {
-  tone?: 'info' | 'warn' | 'error' | 'success';
-  children: ReactNode;
-}) {
-  const styles = {
-    info: 'border-line bg-surface-sunken text-content-muted',
-    warn: 'border-state-thinking/35 bg-state-thinking/10 text-state-thinking',
-    error: 'border-state-error/35 bg-state-error/10 text-state-error',
-    success: 'border-state-listening/35 bg-state-listening/10 text-state-listening',
-  }[tone];
-
-  return (
-    <div className={clsx('flex items-start gap-2 rounded-xl border p-3 text-xs leading-relaxed', styles)}>
-      <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
-}
-
-export function Spinner({ className }: { className?: string }) {
-  return (
-    <span
-      className={clsx(
-        'inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent',
-        className,
-      )}
-      aria-hidden
-    />
+    </Badge>
   );
 }

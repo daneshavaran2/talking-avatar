@@ -2,9 +2,16 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, BarList, Card, Spinner, StatCard } from '@/components/admin/ui';
+import { toast } from 'sonner';
+
+import { BarList, SectionCard, StatCard } from '@/components/admin/ui';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CATEGORY_LABELS, LATENCY_BUDGET_MS, type BlockedCategory } from '@/lib/config/constants';
 import { TOOL_LABEL_BY_NAME } from '@/lib/tools/labels';
+import { cn } from '@/lib/utils';
 
 /** داشبورد مدیریتی (§۱۰). همهٔ تجمیع سمت پایگاه داده انجام شده است. */
 
@@ -63,15 +70,13 @@ const SERVICE_LABELS: Record<string, string> = {
 };
 
 export function AnalyticsDashboard() {
-  const [rangeKey, setRangeKey] = useState<(typeof RANGES)[number]['key']>('week');
+  const [rangeKey, setRangeKey] = useState<string>('week');
   const [data, setData] = useState<Analytics | null>(null);
   const [unanswered, setUnanswered] = useState<UnansweredRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
 
     const days = RANGES.find((range) => range.key === rangeKey)?.days ?? 7;
     const to = new Date();
@@ -85,7 +90,7 @@ export function AnalyticsDashboard() {
 
       if (!analyticsResponse.ok) {
         const body = (await analyticsResponse.json().catch(() => null)) as { error?: string } | null;
-        setError(body?.error ?? 'خواندن آمار ممکن نشد.');
+        toast.error(body?.error ?? 'خواندن آمار ممکن نشد.');
         return;
       }
 
@@ -96,7 +101,7 @@ export function AnalyticsDashboard() {
         setUnanswered(body.questions);
       }
     } catch {
-      setError('ارتباط با سرور برقرار نشد.');
+      toast.error('ارتباط با سرور برقرار نشد.');
     } finally {
       setLoading(false);
     }
@@ -116,33 +121,26 @@ export function AnalyticsDashboard() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-content">داشبورد</h1>
+        <h1 className="text-lg font-semibold">داشبورد</h1>
 
-        <div className="flex gap-1 rounded-xl border border-line bg-surface p-1">
-          {RANGES.map((range) => (
-            <button
-              key={range.key}
-              type="button"
-              onClick={() => setRangeKey(range.key)}
-              className={
-                rangeKey === range.key
-                  ? 'rounded-lg bg-brand-wash px-3 py-1.5 text-xs text-brand-soft'
-                  : 'rounded-lg px-3 py-1.5 text-xs text-content-muted hover:text-content'
-              }
-            >
-              {range.label}
-            </button>
-          ))}
-        </div>
+        <Tabs value={rangeKey} onValueChange={setRangeKey}>
+          <TabsList>
+            {RANGES.map((range) => (
+              <TabsTrigger key={range.key} value={range.key}>
+                {range.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </header>
 
-      {error && <Alert tone="error">{error}</Alert>}
-
       {loading && !data ? (
-        <div className="flex justify-center py-16 text-content-faint">
-          <Spinner className="h-6 w-6" />
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <Skeleton key={index} className="h-24 w-full" />
+          ))}
         </div>
       ) : data ? (
         <>
@@ -195,9 +193,9 @@ export function AnalyticsDashboard() {
           </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <Card
+            <SectionCard
               title="دسته‌بندی موضوعی"
-              description="سؤالات کاربران بر اساس موضوع — روی هر دسته کلیک کنید تا مکالماتش را ببینید."
+              description="روی هر دسته کلیک کنید تا مکالماتش را ببینید."
             >
               <BarList
                 items={data.topics.map((topic) => ({
@@ -210,137 +208,129 @@ export function AnalyticsDashboard() {
                   window.location.href = `/admin/conversations?topic=${encodeURIComponent(key)}`;
                 }}
               />
-            </Card>
+            </SectionCard>
 
-            <Card
+            <SectionCard
               title="تفکیک تأخیر"
               description={`میانگین هر مرحله در ${data.latency.sampleSize} نوبت کامل‌شده.`}
             >
-              <LatencyBreakdown latency={data.latency} />
-
-              {data.turns.interrupted ? (
-                <p className="mt-4 border-t border-line pt-3 hint">
-                  <span className="latn">{data.turns.interrupted}</span> نوبت با قطع کردن کاربر
-                  (Barge-In) پایان یافته است.
-                </p>
-              ) : null}
-            </Card>
+              <LatencyBreakdown latency={data.latency} interrupted={data.turns.interrupted} />
+            </SectionCard>
           </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <Card
+            <SectionCard
               title="پرتکرارترین سؤالات"
               description="چه چیزی را باید در سایت یا پایگاه دانش برجسته کنید؟"
             >
               {data.frequentQuestions.length === 0 ? (
-                <p className="hint py-4 text-center">هنوز سؤال تکراری ثبت نشده است.</p>
+                <p className="py-4 text-center text-xs text-muted-foreground">
+                  هنوز سؤال تکراری ثبت نشده است.
+                </p>
               ) : (
-                <ul className="space-y-1.5">
+                <ul className="flex flex-col gap-1.5">
                   {data.frequentQuestions.map((row, index) => (
                     <li
                       key={`${row.question}-${index}`}
-                      className="flex items-start justify-between gap-3 rounded-lg bg-surface-sunken px-3 py-2 text-xs"
+                      className="flex items-start justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2 text-xs"
                     >
-                      <span className="line-clamp-2 text-content">{row.question}</span>
-                      <span className="shrink-0 tabular-nums text-content-faint latn">
+                      <span className="line-clamp-2">{row.question}</span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground latn">
                         {row.count}×
                       </span>
                     </li>
                   ))}
                 </ul>
               )}
-            </Card>
+            </SectionCard>
 
-            <Card
+            <SectionCard
               title="سؤالات بی‌پاسخ"
               description="سؤالاتی که پایگاه دانش جوابی برایشان نداشت — فهرست کارهای بهبود شما."
-              action={
-                <span className="rounded-lg bg-state-thinking/15 px-2 py-1 text-[11px] text-state-thinking latn">
-                  {data.unansweredCount}
-                </span>
-              }
+              action={<Badge variant="warning">{data.unansweredCount}</Badge>}
             >
               {unanswered.length === 0 ? (
-                <p className="hint py-4 text-center">سؤال بی‌پاسخی ثبت نشده است.</p>
+                <p className="py-4 text-center text-xs text-muted-foreground">
+                  سؤال بی‌پاسخی ثبت نشده است.
+                </p>
               ) : (
-                <ul className="space-y-1.5">
+                <ul className="flex flex-col gap-1.5">
                   {unanswered.slice(0, 10).map((row) => (
                     <li
                       key={row.id}
-                      className="flex items-start justify-between gap-3 rounded-lg bg-surface-sunken px-3 py-2 text-xs"
+                      className="flex items-start justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2 text-xs"
                     >
                       <div className="min-w-0">
-                        <p className="line-clamp-2 text-content">{row.question}</p>
-                        <p className="mt-0.5 text-[11px] text-content-faint">
+                        <p className="line-clamp-2">{row.question}</p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
                           <span className="latn">{row.askCount}</span> بار پرسیده شده
                         </p>
                       </div>
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => void resolveQuestion(row.id)}
-                        className="shrink-0 text-[11px] text-brand-soft hover:underline"
+                        className="shrink-0"
                       >
                         رسیدگی شد
-                      </button>
+                      </Button>
                     </li>
                   ))}
                 </ul>
               )}
-            </Card>
+            </SectionCard>
           </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <Card title="توزیع ساعتی مراجعات" description="چه ساعاتی بیشترین مراجعه را دارید؟">
+            <SectionCard title="توزیع ساعتی مراجعات" description="چه ساعاتی بیشترین مراجعه را دارید؟">
               <HourlyChart hourly={data.hourly} />
-            </Card>
+            </SectionCard>
 
-            <div className="space-y-5">
-              <Card title="خطای سرویس‌ها" description="نرخ خطا به تفکیک لایه.">
+            <div className="flex flex-col gap-5">
+              <SectionCard title="خطای سرویس‌ها" description="نرخ خطا به تفکیک لایه.">
                 {data.serviceErrors.length === 0 ? (
-                  <p className="hint py-4 text-center">خطایی در این بازه ثبت نشده است.</p>
+                  <p className="py-4 text-center text-xs text-muted-foreground">
+                    خطایی در این بازه ثبت نشده است.
+                  </p>
                 ) : (
-                  <ul className="space-y-1.5">
+                  <ul className="flex flex-col gap-1.5">
                     {data.serviceErrors.map((row) => (
                       <li
                         key={row.service}
-                        className="flex items-center justify-between rounded-lg bg-surface-sunken px-3 py-2 text-xs"
+                        className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-xs"
                       >
-                        <span className="text-content">
-                          {SERVICE_LABELS[row.service] ?? row.service}
-                        </span>
-                        <span className="tabular-nums text-state-error latn">{row.count}</span>
+                        <span>{SERVICE_LABELS[row.service] ?? row.service}</span>
+                        <span className="tabular-nums text-destructive latn">{row.count}</span>
                       </li>
                     ))}
                   </ul>
                 )}
-              </Card>
+              </SectionCard>
 
               {data.tools.length > 0 && (
-                <Card title="ابزارهای خارجی" description="تعداد فراخوانی و میانگین زمان پاسخ.">
-                  <ul className="space-y-1.5">
+                <SectionCard title="ابزارهای خارجی" description="تعداد فراخوانی و میانگین زمان پاسخ.">
+                  <ul className="flex flex-col gap-1.5">
                     {data.tools.map((row) => (
                       <li
                         key={row.name}
-                        className="flex items-center justify-between rounded-lg bg-surface-sunken px-3 py-2 text-xs"
+                        className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-xs"
                       >
-                        <span className="text-content">
-                          {TOOL_LABEL_BY_NAME[row.name] ?? row.name}
-                        </span>
-                        <span className="tabular-nums text-content-faint latn">
+                        <span>{TOOL_LABEL_BY_NAME[row.name] ?? row.name}</span>
+                        <span className="tabular-nums text-muted-foreground latn">
                           {row.count}× · {row.avgLatencyMs ?? '—'}ms
                         </span>
                       </li>
                     ))}
                   </ul>
-                </Card>
+                </SectionCard>
               )}
             </div>
           </div>
 
           <div className="flex justify-center">
-            <Link href="/admin/conversations" className="btn-ghost text-xs">
-              مشاهدهٔ آرشیو کامل مکالمات
-            </Link>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/admin/conversations">مشاهدهٔ آرشیو کامل مکالمات</Link>
+            </Button>
           </div>
         </>
       ) : null}
@@ -348,11 +338,25 @@ export function AnalyticsDashboard() {
   );
 }
 
-function LatencyBreakdown({ latency }: { latency: Analytics['latency'] }) {
+function LatencyBreakdown({
+  latency,
+  interrupted,
+}: {
+  latency: Analytics['latency'];
+  interrupted?: number;
+}) {
   const stages = [
     { label: 'تشخیص گفتار', value: latency.sttMs, budget: LATENCY_BUDGET_MS.stt },
-    { label: 'اولین توکن مدل', value: latency.llmFirstTokenMs, budget: LATENCY_BUDGET_MS.llmFirstToken },
-    { label: 'اولین بایت صدا', value: latency.ttsFirstAudioMs, budget: LATENCY_BUDGET_MS.ttsFirstByte },
+    {
+      label: 'اولین توکن مدل',
+      value: latency.llmFirstTokenMs,
+      budget: LATENCY_BUDGET_MS.llmFirstToken,
+    },
+    {
+      label: 'اولین بایت صدا',
+      value: latency.ttsFirstAudioMs,
+      budget: LATENCY_BUDGET_MS.ttsFirstByte,
+    },
     {
       label: 'اولین فریم آواتار',
       value: latency.avatarFirstFrameMs,
@@ -361,50 +365,62 @@ function LatencyBreakdown({ latency }: { latency: Analytics['latency'] }) {
   ];
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       {stages.map((stage) => (
         <div key={stage.label}>
           <div className="mb-1 flex items-baseline justify-between text-xs">
-            <span className="text-content">{stage.label}</span>
-            <span className="tabular-nums text-content-muted latn">
+            <span>{stage.label}</span>
+            <span className="tabular-nums text-muted-foreground latn">
               {stage.value === null ? 'اندازه‌گیری نشده' : `${stage.value} / ${stage.budget} ms`}
             </span>
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-surface-sunken">
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
             <div
-              className={
+              className={cn(
+                'h-full rounded-full',
                 stage.value === null
-                  ? 'h-full w-0'
+                  ? 'w-0'
                   : stage.value <= stage.budget
-                    ? 'h-full rounded-full bg-state-listening'
-                    : 'h-full rounded-full bg-state-error'
-              }
+                    ? 'bg-state-listening'
+                    : 'bg-state-error',
+              )}
               style={{
-                width: stage.value === null ? 0 : `${Math.min(100, (stage.value / stage.budget) * 100)}%`,
+                width:
+                  stage.value === null
+                    ? 0
+                    : `${Math.min(100, (stage.value / stage.budget) * 100)}%`,
               }}
             />
           </div>
         </div>
       ))}
 
-      <div className="border-t border-line pt-3">
+      <div className="border-t pt-3">
         <div className="flex items-baseline justify-between text-xs">
-          <span className="font-medium text-content">پایان صحبت تا اولین صدا</span>
+          <span className="font-medium">پایان صحبت تا اولین صدا</span>
           <span
-            className={
+            className={cn(
+              'tabular-nums latn',
               latency.endToEndMs === null
-                ? 'text-content-faint'
+                ? 'text-muted-foreground'
                 : latency.endToEndMs <= LATENCY_BUDGET_MS.total
-                  ? 'tabular-nums text-state-listening latn'
-                  : 'tabular-nums text-state-error latn'
-            }
+                  ? 'text-state-listening'
+                  : 'text-state-error',
+            )}
           >
             {latency.endToEndMs === null ? 'اندازه‌گیری نشده' : `${latency.endToEndMs} ms`}
           </span>
         </div>
-        <p className="mt-1 hint">
+        <p className="mt-1 text-[11px] text-muted-foreground">
           شاخص اصلی محصول. مراحلی که «اندازه‌گیری نشده» هستند در این نصب فعال نیستند.
         </p>
+
+        {interrupted ? (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            <span className="latn">{interrupted}</span> نوبت با قطع کردن کاربر (Barge-In) پایان
+            یافته است.
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -423,13 +439,13 @@ function HourlyChart({ hourly }: { hourly: Analytics['hourly'] }) {
             title={`ساعت ${row.hour}: ${row.count} مکالمه`}
           >
             <div
-              className="w-full rounded-t bg-brand/60 transition-colors group-hover:bg-brand"
+              className="w-full rounded-t bg-primary/60 transition-colors group-hover:bg-primary"
               style={{ height: `${Math.max(2, (row.count / max) * 100)}%` }}
             />
           </div>
         ))}
       </div>
-      <div className="mt-1.5 flex justify-between text-[10px] text-content-faint latn">
+      <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground latn">
         <span>0</span>
         <span>6</span>
         <span>12</span>

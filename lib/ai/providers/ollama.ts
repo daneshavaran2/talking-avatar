@@ -2,6 +2,7 @@ import 'server-only';
 import type { ChatMessage, LLMOptions, LLMProvider, LLMStreamChunk } from '@/lib/ai/types';
 import { ProviderRequestError } from '@/lib/ai/types';
 import { describeHttpError, readLines, safeJsonParse } from '@/lib/ai/stream-utils';
+import { fetchWithRetry, logRetry } from '@/lib/http/retry';
 
 const DEFAULT_BASE = 'http://localhost:11434';
 
@@ -51,12 +52,16 @@ export class OllamaProvider implements LLMProvider {
       }));
     }
 
-    const response = await fetch(`${this.baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: options.signal,
-    });
+    const response = await fetchWithRetry(
+      `${this.baseUrl}/api/chat`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: options.signal,
+      },
+      { signal: options.signal, onRetry: logRetry('llm') },
+    );
 
     if (!response.ok || !response.body) {
       throw new ProviderRequestError('llm', await describeHttpError(response), response.status);

@@ -1,8 +1,26 @@
 'use client';
 
+import { DownloadIcon, SearchIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Card, Spinner } from '@/components/admin/ui';
+import { toast } from 'sonner';
+
+import { SectionCard } from '@/components/admin/ui';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Field, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { TOPIC_LABELS, TOPICS, type Topic } from '@/lib/config/constants';
 
 /** آرشیو مکالمات با جستجو، فیلتر و خروجی CSV (§۱۰.۳). */
@@ -13,7 +31,6 @@ type ConversationRow = {
   inputMode: string | null;
   messageCount: number;
   startedAt: string;
-  endedAt: string | null;
   messages: Array<{
     role: string;
     content: string;
@@ -35,12 +52,11 @@ export function ConversationArchive({ initialTopic }: { initialTopic?: string })
   const [pageCount, setPageCount] = useState(1);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
   const [searchDraft, setSearchDraft] = useState('');
-  const [topic, setTopic] = useState(initialTopic ?? '');
-  const [inputType, setInputType] = useState('');
+  const [topic, setTopic] = useState(initialTopic ?? 'all');
+  const [voiceOnly, setVoiceOnly] = useState(false);
   const [refusedOnly, setRefusedOnly] = useState(false);
   const [days, setDays] = useState('30');
 
@@ -56,22 +72,21 @@ export function ConversationArchive({ initialTopic }: { initialTopic?: string })
     });
 
     if (search) params.set('search', search);
-    if (topic) params.set('topic', topic);
-    if (inputType) params.set('inputType', inputType);
+    if (topic !== 'all') params.set('topic', topic);
+    if (voiceOnly) params.set('inputType', 'voice');
     if (refusedOnly) params.set('refusedOnly', 'true');
 
     return params;
-  }, [days, page, search, topic, inputType, refusedOnly]);
+  }, [days, page, search, topic, voiceOnly, refusedOnly]);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
 
     try {
       const response = await fetch(`/api/admin/conversations?${buildQuery().toString()}`);
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(body?.error ?? 'خواندن آرشیو ممکن نشد.');
+        toast.error(body?.error ?? 'خواندن آرشیو ممکن نشد.');
         return;
       }
 
@@ -85,7 +100,7 @@ export function ConversationArchive({ initialTopic }: { initialTopic?: string })
       setTotal(body.total);
       setPageCount(body.pageCount);
     } catch {
-      setError('ارتباط با سرور برقرار نشد.');
+      toast.error('ارتباط با سرور برقرار نشد.');
     } finally {
       setLoading(false);
     }
@@ -97,35 +112,32 @@ export function ConversationArchive({ initialTopic }: { initialTopic?: string })
 
   useEffect(() => {
     setPage(1);
-  }, [search, topic, inputType, refusedOnly, days]);
+  }, [search, topic, voiceOnly, refusedOnly, days]);
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-content">آرشیو مکالمات</h1>
-          <p className="mt-0.5 hint">
+          <h1 className="text-lg font-semibold">آرشیو مکالمات</h1>
+          <p className="mt-0.5 text-xs text-muted-foreground">
             <span className="latn">{total}</span> مکالمه در بازهٔ انتخابی
           </p>
         </div>
 
-        <a
-          href={`/api/admin/conversations/export?${buildQuery().toString()}`}
-          className="btn-ghost text-xs"
-          download
-        >
-          خروجی CSV
-        </a>
+        <Button variant="outline" size="sm" asChild>
+          <a href={`/api/admin/conversations/export?${buildQuery().toString()}`} download>
+            <DownloadIcon />
+            خروجی CSV
+          </a>
+        </Button>
       </header>
 
-      <Card>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="md:col-span-2">
-            <label htmlFor="search" className="label">
-              جستجو در متن
-            </label>
+      <SectionCard>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Field className="md:col-span-2">
+            <FieldLabel htmlFor="search">جستجو در متن</FieldLabel>
             <div className="flex gap-2">
-              <input
+              <Input
                 id="search"
                 value={searchDraft}
                 onChange={(event) => setSearchDraft(event.target.value)}
@@ -133,136 +145,117 @@ export function ConversationArchive({ initialTopic }: { initialTopic?: string })
                   if (event.key === 'Enter') setSearch(searchDraft.trim());
                 }}
                 placeholder="بخشی از سؤال یا پاسخ…"
-                className="field flex-1"
+                className="flex-1"
               />
-              <button
-                type="button"
-                onClick={() => setSearch(searchDraft.trim())}
-                className="btn-ghost shrink-0"
-              >
+              <Button variant="outline" onClick={() => setSearch(searchDraft.trim())}>
+                <SearchIcon />
                 جستجو
-              </button>
+              </Button>
             </div>
-          </div>
+          </Field>
 
-          <div>
-            <label htmlFor="topic" className="label">
-              دسته
-            </label>
-            <select
-              id="topic"
-              value={topic}
-              onChange={(event) => setTopic(event.target.value)}
-              className="field"
-            >
-              <option value="">همه</option>
-              {TOPICS.map((item) => (
-                <option key={item} value={item}>
-                  {TOPIC_LABELS[item as Topic]}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Field>
+            <FieldLabel htmlFor="topic">دسته</FieldLabel>
+            <Select value={topic} onValueChange={setTopic}>
+              <SelectTrigger id="topic">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="all">همه</SelectItem>
+                  {TOPICS.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {TOPIC_LABELS[item as Topic]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
 
-          <div>
-            <label htmlFor="range" className="label">
-              بازهٔ زمانی
-            </label>
-            <select
-              id="range"
-              value={days}
-              onChange={(event) => setDays(event.target.value)}
-              className="field"
-            >
-              {RANGE_DAYS.map((range) => (
-                <option key={range.key} value={range.key}>
-                  {range.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Field>
+            <FieldLabel htmlFor="range">بازهٔ زمانی</FieldLabel>
+            <Select value={days} onValueChange={setDays}>
+              <SelectTrigger id="range">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {RANGE_DAYS.map((range) => (
+                    <SelectItem key={range.key} value={range.key}>
+                      {range.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
 
           <div className="flex items-end gap-4 md:col-span-2 xl:col-span-4">
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-content">
-              <input
-                type="checkbox"
-                checked={inputType === 'voice'}
-                onChange={(event) => setInputType(event.target.checked ? 'voice' : '')}
-                className="h-4 w-4 accent-[#E3A857]"
-              />
+            <label className="flex cursor-pointer items-center gap-2 text-xs">
+              <Checkbox checked={voiceOnly} onCheckedChange={(v) => setVoiceOnly(v === true)} />
               فقط ورودی صوتی
             </label>
-
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-content">
-              <input
-                type="checkbox"
-                checked={refusedOnly}
-                onChange={(event) => setRefusedOnly(event.target.checked)}
-                className="h-4 w-4 accent-[#E3A857]"
-              />
+            <label className="flex cursor-pointer items-center gap-2 text-xs">
+              <Checkbox checked={refusedOnly} onCheckedChange={(v) => setRefusedOnly(v === true)} />
               فقط مکالمات دارای امتناع
             </label>
           </div>
         </div>
-      </Card>
-
-      {error && <Alert tone="error">{error}</Alert>}
+      </SectionCard>
 
       {loading ? (
-        <div className="flex justify-center py-16 text-content-faint">
-          <Spinner className="h-6 w-6" />
+        <div className="flex flex-col gap-2">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton key={index} className="h-24 w-full" />
+          ))}
         </div>
       ) : rows.length === 0 ? (
-        <Card>
-          <p className="hint py-8 text-center">مکالمه‌ای با این فیلترها پیدا نشد.</p>
-        </Card>
+        <SectionCard>
+          <p className="py-8 text-center text-xs text-muted-foreground">
+            مکالمه‌ای با این فیلترها پیدا نشد.
+          </p>
+        </SectionCard>
       ) : (
-        <ul className="space-y-2">
+        <ul className="flex flex-col gap-2">
           {rows.map((row) => {
             const question = row.messages.find((message) => message.role === 'user');
             const answer = row.messages.find((message) => message.role === 'assistant');
 
             return (
               <li key={row.id}>
-                <Link
-                  href={`/admin/conversations/${row.id}`}
-                  className="block panel p-4 transition-colors hover:border-line-strong"
-                >
-                  <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-content-faint">
-                    <span className="latn">
-                      {new Date(row.startedAt).toLocaleString('fa-IR')}
-                    </span>
-                    {row.topic && (
-                      <span className="rounded bg-surface-raised px-1.5 py-0.5">
-                        {TOPIC_LABELS[row.topic as Topic] ?? row.topic}
-                      </span>
-                    )}
-                    <span className="rounded bg-surface-raised px-1.5 py-0.5">
-                      {row.inputMode === 'voice'
-                        ? 'صوتی'
-                        : row.inputMode === 'mixed'
-                          ? 'ترکیبی'
-                          : 'تایپی'}
-                    </span>
-                    <span className="latn">{row.messageCount} پیام</span>
-                    {answer?.latencyMs && (
-                      <span className="latn">{answer.latencyMs} ms</span>
-                    )}
-                    {answer?.wasRefused && (
-                      <span className="rounded bg-state-thinking/15 px-1.5 py-0.5 text-state-thinking">
-                        امتناع
-                      </span>
-                    )}
-                  </div>
+                <Link href={`/admin/conversations/${row.id}`}>
+                  <Card className="transition-colors hover:border-primary/40">
+                    <CardContent className="p-4">
+                      <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                        <span className="latn">
+                          {new Date(row.startedAt).toLocaleString('fa-IR')}
+                        </span>
+                        {row.topic && (
+                          <Badge variant="secondary">
+                            {TOPIC_LABELS[row.topic as Topic] ?? row.topic}
+                          </Badge>
+                        )}
+                        <Badge variant="outline">
+                          {row.inputMode === 'voice'
+                            ? 'صوتی'
+                            : row.inputMode === 'mixed'
+                              ? 'ترکیبی'
+                              : 'تایپی'}
+                        </Badge>
+                        <span className="latn">{row.messageCount} پیام</span>
+                        {answer?.latencyMs && <span className="latn">{answer.latencyMs} ms</span>}
+                        {answer?.wasRefused && <Badge variant="warning">امتناع</Badge>}
+                      </div>
 
-                  {question && (
-                    <p className="line-clamp-1 text-sm text-content">{question.content}</p>
-                  )}
-                  {answer && (
-                    <p className="mt-1 line-clamp-2 text-xs leading-6 text-content-muted">
-                      {answer.content}
-                    </p>
-                  )}
+                      {question && <p className="line-clamp-1 text-sm">{question.content}</p>}
+                      {answer && (
+                        <p className="mt-1 line-clamp-2 text-xs leading-6 text-muted-foreground">
+                          {answer.content}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
                 </Link>
               </li>
             );
@@ -272,25 +265,25 @@ export function ConversationArchive({ initialTopic }: { initialTopic?: string })
 
       {pageCount > 1 && (
         <div className="flex items-center justify-center gap-2">
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setPage((current) => Math.max(1, current - 1))}
             disabled={page === 1}
-            className="btn-ghost text-xs"
           >
             قبلی
-          </button>
-          <span className="text-xs text-content-muted latn">
+          </Button>
+          <span className="text-xs text-muted-foreground latn">
             {page} / {pageCount}
           </span>
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
             disabled={page === pageCount}
-            className="btn-ghost text-xs"
           >
             بعدی
-          </button>
+          </Button>
         </div>
       )}
     </div>

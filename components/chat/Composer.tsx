@@ -1,16 +1,18 @@
 'use client';
 
-import clsx from 'clsx';
+import { MicIcon, MicOffIcon, SendIcon, SquareIcon } from 'lucide-react';
 import { useState, type FormEvent, type KeyboardEvent } from 'react';
-import { MicIcon, MicOffIcon, SendIcon, StopIcon } from '@/components/ui/icons';
+
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 import type { ConversationState } from '@/lib/config/constants';
 
 /**
  * ورودی کاربر — تایپی و صوتی (§F4، §F5).
  *
  * Barge-In با تایپ هم کار می‌کند (F8.5): ارسال پیام جدید حین
- * پاسخ‌دهی، پاسخ قبلی را لغو می‌کند. دکمهٔ توقف هم مسیر صریح
- * قطع کردن را می‌دهد.
+ * پاسخ‌دهی، پاسخ قبلی را لغو می‌کند.
  */
 
 type ComposerProps = {
@@ -31,31 +33,36 @@ export function Composer({
   onInterrupt,
 }: ComposerProps) {
   const [value, setValue] = useState('');
-  const busy = state === 'thinking' || state === 'speaking';
+  // حین اتصال مجدد هم دکمهٔ توقف لازم است: انتظار می‌تواند چند ثانیه
+  // طول بکشد و کاربر باید بتواند بی‌خیالش شود. کادر نوشتن باز می‌ماند.
+  const busy = state === 'thinking' || state === 'speaking' || state === 'reconnecting';
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
+  const send = () => {
     const text = value.trim();
     if (!text) return;
     setValue('');
     onSend(text);
   };
 
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    send();
+  };
+
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter می‌فرستد، Shift+Enter خط جدید می‌سازد (F4.2).
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      const text = value.trim();
-      if (!text) return;
-      setValue('');
-      onSend(text);
+      send();
     }
   };
 
   return (
     <form onSubmit={submit} className="flex items-end gap-2">
-      <button
+      <Button
         type="button"
+        variant={micEnabled ? 'default' : 'outline'}
+        size="icon"
         onClick={onToggleMic}
         disabled={!micAvailable}
         aria-label={micEnabled ? 'خاموش کردن میکروفون' : 'روشن کردن میکروفون'}
@@ -66,22 +73,16 @@ export function Composer({
               : 'گفتگوی صوتی'
             : 'گفتگوی صوتی در این نصب فعال نیست'
         }
-        className={clsx(
-          'relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors',
-          micEnabled
-            ? 'border-state-listening/50 bg-state-listening/15 text-state-listening'
-            : 'border-line bg-surface-raised text-content-muted hover:border-line-strong hover:text-content',
-          !micAvailable && 'cursor-not-allowed opacity-40',
-        )}
+        className={cn('relative shrink-0', micEnabled && 'bg-state-listening hover:bg-state-listening/90')}
       >
         {micEnabled ? <MicIcon /> : <MicOffIcon />}
         {micEnabled && (
-          <span className="absolute inset-0 rounded-xl ring-2 ring-state-listening/40 animate-pulse-ring" />
+          <span className="absolute inset-0 animate-pulse-ring rounded-md ring-2 ring-state-listening/40" />
         )}
-      </button>
+      </Button>
 
       <div className="relative flex-1">
-        <textarea
+        <Textarea
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={handleKeyDown}
@@ -89,29 +90,32 @@ export function Composer({
           dir="rtl"
           placeholder="سؤالتان را بنویسید…"
           aria-label="متن پیام"
-          className="field max-h-32 min-h-[2.75rem] resize-none py-3 pe-12 leading-6"
+          className="max-h-32 min-h-9 resize-none py-2 pe-11 leading-6"
         />
 
-        <button
+        <Button
           type="submit"
+          size="icon"
           disabled={!value.trim()}
           aria-label="ارسال"
-          className="absolute bottom-1.5 end-1.5 flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-ink transition-colors hover:bg-brand-soft disabled:opacity-30"
+          className="absolute bottom-1 end-1 size-7"
         >
-          <SendIcon className="h-4 w-4" />
-        </button>
+          <SendIcon />
+        </Button>
       </div>
 
       {busy && (
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="icon"
           onClick={onInterrupt}
           aria-label="توقف پاسخ"
           title="توقف پاسخ"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-line bg-surface-raised text-content-muted transition-colors hover:border-state-error/50 hover:text-state-error"
+          className="shrink-0"
         >
-          <StopIcon className="h-4 w-4" />
-        </button>
+          <SquareIcon />
+        </Button>
       )}
     </form>
   );

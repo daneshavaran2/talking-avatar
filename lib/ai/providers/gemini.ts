@@ -8,6 +8,7 @@ import type {
 } from '@/lib/ai/types';
 import { ProviderRequestError } from '@/lib/ai/types';
 import { describeHttpError, readSse, safeJsonParse } from '@/lib/ai/stream-utils';
+import { fetchWithRetry, logRetry } from '@/lib/http/retry';
 
 const DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -90,15 +91,19 @@ export class GeminiProvider implements LLMProvider {
       body.tools = toGeminiTools(options.tools);
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': this.apiKey,
+    const response = await fetchWithRetry(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': this.apiKey,
+        },
+        body: JSON.stringify(body),
+        signal: options.signal,
       },
-      body: JSON.stringify(body),
-      signal: options.signal,
-    });
+      { signal: options.signal, onRetry: logRetry('llm') },
+    );
 
     if (!response.ok || !response.body) {
       throw new ProviderRequestError('llm', await describeHttpError(response), response.status);

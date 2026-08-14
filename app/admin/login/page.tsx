@@ -2,7 +2,19 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState, type FormEvent } from 'react';
-import { Alert, Spinner } from '@/components/admin/ui';
+
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,52 +57,60 @@ function LoginForm() {
 
   return (
     <div className="flex min-h-dvh items-center justify-center px-4">
-      <form onSubmit={submit} className="panel w-full max-w-sm p-6">
-        <h1 className="text-base font-semibold text-content">ورود به پنل مدیریت</h1>
-        <p className="mt-1 hint">دستیار دیجیتال فارسی</p>
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle className="text-base">ورود به پنل مدیریت</CardTitle>
+          <CardDescription>دستیار دیجیتال فارسی</CardDescription>
+        </CardHeader>
 
-        <div className="mt-6 space-y-4">
-          <div>
-            <label htmlFor="email" className="label">
-              ایمیل
-            </label>
-            <input
-              id="email"
-              type="email"
-              dir="ltr"
-              autoComplete="username"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className="field text-start"
-            />
-          </div>
+        <CardContent>
+          <form onSubmit={submit}>
+            <FieldGroup>
+              <Field data-invalid={error ? true : undefined}>
+                <FieldLabel htmlFor="email">ایمیل</FieldLabel>
+                <Input
+                  id="email"
+                  type="email"
+                  dir="ltr"
+                  autoComplete="username"
+                  required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  aria-invalid={error ? true : undefined}
+                  className="text-start"
+                />
+              </Field>
 
-          <div>
-            <label htmlFor="password" className="label">
-              رمز عبور
-            </label>
-            <input
-              id="password"
-              type="password"
-              dir="ltr"
-              autoComplete="current-password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="field text-start"
-            />
-          </div>
+              <Field data-invalid={error ? true : undefined}>
+                <FieldLabel htmlFor="password">رمز عبور</FieldLabel>
+                <Input
+                  id="password"
+                  type="password"
+                  dir="ltr"
+                  autoComplete="current-password"
+                  required
+                  minLength={8}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  aria-invalid={error ? true : undefined}
+                  className="text-start"
+                />
+              </Field>
 
-          {error && <Alert tone="error">{error}</Alert>}
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
 
-          <button type="submit" disabled={busy} className="btn-primary w-full">
-            {busy ? <Spinner /> : null}
-            ورود
-          </button>
-        </div>
-      </form>
+              <Button type="submit" disabled={busy} className="w-full">
+                {busy && <Spinner />}
+                ورود
+              </Button>
+            </FieldGroup>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

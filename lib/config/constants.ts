@@ -12,6 +12,7 @@ export const CONVERSATION_STATES = [
   'thinking',
   'speaking',
   'interrupted',
+  'reconnecting',
   'error',
 ] as const;
 
@@ -23,6 +24,7 @@ export const STATE_LABELS: Record<ConversationState, string> = {
   thinking: 'در حال فکر کردن',
   speaking: 'در حال پاسخ دادن',
   interrupted: 'قطع شد',
+  reconnecting: 'در حال اتصال مجدد...',
   error: 'خطا',
 };
 

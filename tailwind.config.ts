@@ -1,12 +1,15 @@
 import type { Config } from 'tailwindcss';
+import animate from 'tailwindcss-animate';
 
 /**
- * پیکربندی Tailwind
+ * پیکربندی Tailwind — قرارداد توکن shadcn/ui.
  *
  * نکتهٔ RTL: در سراسر پروژه از ابزارهای منطقی (ms/me/ps/pe/start/end)
- * استفاده می‌شود تا رابط کاربری بدون پلاگین اضافی در جهت راست‌به‌چپ درست بنشیند.
+ * استفاده می‌شود تا رابط کاربری بدون پلاگین اضافی در جهت راست‌به‌چپ
+ * درست بنشیند.
  */
 const config: Config = {
+  darkMode: ['class'],
   content: [
     './app/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
@@ -15,82 +18,89 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['var(--font-vazir)', 'Vazirmatn', 'Tahoma', 'system-ui', 'sans-serif'],
+        sans: ['Vazirmatn', 'Tahoma', 'system-ui', 'sans-serif'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       colors: {
-        ink: {
-          DEFAULT: '#0B0F14',
-          soft: '#121922',
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
         },
-        surface: {
-          DEFAULT: '#151E28',
-          raised: '#1D2833',
-          sunken: '#0E141B',
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
         },
-        line: {
-          DEFAULT: '#26323F',
-          strong: '#34424F',
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
         },
-        content: {
-          DEFAULT: '#E7EEF5',
-          muted: '#93A3B4',
-          faint: '#64748B',
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
         },
-        brand: {
-          DEFAULT: '#E3A857',
-          soft: '#F2C98A',
-          deep: '#B7823A',
-          wash: 'rgba(227, 168, 87, 0.12)',
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
         },
         state: {
-          idle: '#64748B',
-          listening: '#2DD4A7',
-          thinking: '#E3A857',
-          speaking: '#59A5F5',
-          error: '#F2748C',
+          idle: 'hsl(var(--state-idle))',
+          listening: 'hsl(var(--state-listening))',
+          thinking: 'hsl(var(--state-thinking))',
+          speaking: 'hsl(var(--state-speaking))',
+          error: 'hsl(var(--state-error))',
         },
       },
       borderRadius: {
-        xl: '0.875rem',
-        '2xl': '1.25rem',
-        '3xl': '1.75rem',
-      },
-      boxShadow: {
-        panel: '0 1px 0 0 rgba(255,255,255,0.04) inset, 0 18px 40px -24px rgba(0,0,0,0.9)',
-        glow: '0 0 0 1px rgba(227,168,87,0.35), 0 0 32px -8px rgba(227,168,87,0.45)',
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
       keyframes: {
-        'breathe': {
-          '0%, 100%': { transform: 'scale(1) translateY(0)' },
-          '50%': { transform: 'scale(1.012) translateY(-0.35%)' },
+        'accordion-down': {
+          from: { height: '0' },
+          to: { height: 'var(--radix-accordion-content-height)' },
+        },
+        'accordion-up': {
+          from: { height: 'var(--radix-accordion-content-height)' },
+          to: { height: '0' },
         },
         'pulse-ring': {
-          '0%': { transform: 'scale(0.92)', opacity: '0.7' },
-          '70%': { transform: 'scale(1.25)', opacity: '0' },
-          '100%': { transform: 'scale(1.25)', opacity: '0' },
+          '0%': { transform: 'scale(0.92)', opacity: '0.55' },
+          '70%': { transform: 'scale(1.22)', opacity: '0' },
+          '100%': { transform: 'scale(1.22)', opacity: '0' },
         },
-        'wave': {
-          '0%, 100%': { transform: 'scaleY(0.35)' },
+        wave: {
+          '0%, 100%': { transform: 'scaleY(0.3)' },
           '50%': { transform: 'scaleY(1)' },
         },
         'fade-up': {
           from: { opacity: '0', transform: 'translateY(6px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
         },
-        'shimmer': {
-          '100%': { transform: 'translateX(-100%)' },
-        },
       },
       animation: {
-        breathe: 'breathe 5.5s ease-in-out infinite',
+        'accordion-down': 'accordion-down 0.2s ease-out',
+        'accordion-up': 'accordion-up 0.2s ease-out',
         'pulse-ring': 'pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         wave: 'wave 1s ease-in-out infinite',
         'fade-up': 'fade-up 0.24s ease-out both',
       },
     },
   },
-  plugins: [],
+  plugins: [animate],
 };
 
 export default config;

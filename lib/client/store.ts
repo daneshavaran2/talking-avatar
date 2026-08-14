@@ -31,7 +31,13 @@ export type RuntimeConfig = {
   setupCompleted: boolean;
   kioskResetSeconds: number;
   knowledgeBaseReady: boolean;
-  avatar: { imageUrl: string | null; idleLoopUrl: string | null; realtime: boolean };
+  avatar: {
+    imageUrl: string | null;
+    idleLoopUrl: string | null;
+    realtime: boolean;
+    /** هندسهٔ دهان و چشم برای لیپ‌سینک (§F7) */
+    geometry: unknown;
+  };
   speech: { ttsAvailable: boolean; sttMode: 'browser' | 'server' | 'off' };
   livekit: boolean;
 };
@@ -64,6 +70,7 @@ type ConversationStore = {
   markRefused: (turnId: string, reason: string) => void;
   finishTurn: (turnId: string) => void;
   abortTurn: () => void;
+  restartTurn: (previousTurnId: string, nextTurnId: string) => void;
   setPartialTranscript: (text: string) => void;
   setMicEnabled: (enabled: boolean) => void;
   setMicError: (message: string | null) => void;
@@ -167,6 +174,27 @@ export const useConversation = create<ConversationStore>((set, get) => ({
         .map((message) => (message.pending ? { ...message, pending: false } : message))
         // پاسخ‌های خالیِ نوبت قطع‌شده در تاریخچه نمی‌مانند.
         .filter((message) => message.role !== 'assistant' || message.content.trim().length > 0),
+    })),
+
+  /**
+   * پس از قطعی شبکه، همان پرسش با نوبت تازه از نو فرستاده می‌شود.
+   *
+   * پیام کاربر سر جایش می‌ماند (دوباره نوشتنش گیج‌کننده است) ولی
+   * پاسخ نیمه‌کاره پاک می‌شود، وگرنه ادامهٔ پاسخ جدید به دنبال متن
+   * قدیمی می‌چسبد و جمله‌ای می‌سازد که مدل هرگز نگفته است.
+   */
+  restartTurn: (previousTurnId, nextTurnId) =>
+    set((store) => ({
+      turnId: nextTurnId,
+      state: 'thinking',
+      liveText: '',
+      toolActivity: null,
+      error: null,
+      messages: store.messages.map((message) =>
+        message.id === previousTurnId
+          ? { ...message, id: nextTurnId, content: '', refused: false, sources: undefined, pending: true }
+          : message,
+      ),
     })),
 
   setPartialTranscript: (partialTranscript) => set({ partialTranscript }),

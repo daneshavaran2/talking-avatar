@@ -64,6 +64,12 @@ export async function runTurn(request: ChatRequest, writer: SseWriter): Promise<
 
   await ensureConversation(conversationId, inputType);
 
+  // اتصال کاربر وسط پاسخ قطع شده و دوباره وصل شده: آثار تلاش
+  // ناموفق پاک می‌شود تا یک پرسش، یک نوبت بماند (§۱۲.۲).
+  if (request.retryOfTurnId) {
+    await discardFailedAttempt(conversationId, request.retryOfTurnId);
+  }
+
   const turnRow = await prisma.turn
     .create({
       data: {
@@ -338,6 +344,13 @@ export async function runTurn(request: ChatRequest, writer: SseWriter): Promise<
       await recordUnanswered(message);
     }
 
+    // نوبت در این فاصله منسوخ شده — مثلاً کاربر پس از قطعی شبکه
+    // دوباره پرسیده. ذخیرهٔ این پاسخ یعنی یک جواب یتیم در آرشیو و
+    // شمارندهٔ اشتباه، چون آثار همین نوبت همان لحظه پاک شده است.
+    if (!turn.isCurrent() || signal.aborted) {
+      return abortAndClose(writer, turnId, turnRow?.id, turn.release);
+    }
+
     const latencyMs = Date.now() - startedAt;
     const refusal = refusedByOutputLayer as { reason: string } | null;
 
@@ -402,6 +415,39 @@ function abortAndClose(
   writer.close();
   void finishTurn(turnRowId, 'interrupted');
   release();
+}
+
+/** پنجرهٔ مجاز برای پاک کردن تلاش قبلی — اتصال مجدد کار چند ثانیه است. */
+const RETRY_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * پاک کردن ردپای تلاشی که اتصالش قطع شد.
+ *
+ * سه محافظ روی این عمل هست، چون حذف داده از افزودن داده خطرناک‌تر
+ * است: نوبت باید به همین مکالمه تعلق داشته باشد، تازه باشد، و
+ * شناسه‌اش را فقط همان کلاینتی می‌داند که خودش ساخته است.
+ */
+async function discardFailedAttempt(conversationId: string, turnId: string): Promise<void> {
+  const previous = await prisma.turn.findFirst({
+    where: {
+      id: turnId,
+      conversationId,
+      createdAt: { gte: new Date(Date.now() - RETRY_WINDOW_MS) },
+    },
+    select: { id: true },
+  });
+
+  if (!previous) return;
+
+  await prisma.message.deleteMany({ where: { conversationId, turnId } });
+  await prisma.toolCall.deleteMany({ where: { conversationId, turnId } });
+  await prisma.turn.delete({ where: { id: turnId } }).catch(() => null);
+
+  // شمارنده از نو محاسبه می‌شود؛ کم کردن دستی می‌تواند منفی شود.
+  const remaining = await prisma.message.count({ where: { conversationId } });
+  await prisma.conversation
+    .update({ where: { id: conversationId }, data: { messageCount: remaining } })
+    .catch(() => null);
 }
 
 async function ensureConversation(conversationId: string, inputType: string): Promise<void> {

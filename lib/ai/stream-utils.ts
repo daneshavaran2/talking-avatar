@@ -100,15 +100,34 @@ export async function describeHttpError(response: Response): Promise<string> {
 }
 
 /**
+ * تشخیص اینکه یک خطا از سر رسیدن مهلت است یا لغو بیرونی.
+ *
+ * فرق این دو مهم است: مهلت یعنی سرویس بیرونی کند بود (پیام و وضعیت
+ * جداگانه دارد — F9.5)، ولی لغو یعنی خودِ کاربر وسط حرف پرید (§F8)
+ * و اصلاً نباید مثل خطا گزارش شود.
+ */
+export function isTimeoutError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'TimeoutError';
+}
+
+/**
  * ترکیب AbortSignal بیرونی با Timeout.
  * برمی‌گرداند: سیگنال ترکیبی و تابع پاک‌سازی تایمر.
+ *
+ * دلیل استفاده از DOMException با نام TimeoutError: `fetch` هنگام
+ * لغو، دقیقاً همان `reason` سیگنال را پرتاب می‌کند. اگر اینجا یک
+ * Error معمولی بدهیم، در سمت گیرنده از هر خطای دیگری قابل تشخیص
+ * نیست. این همان قراردادی است که خودِ `AbortSignal.timeout()` دارد.
  */
 export function withTimeout(
   signal: AbortSignal | undefined,
   timeoutMs: number,
 ): { signal: AbortSignal; cleanup: () => void } {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
+  const timer = setTimeout(
+    () => controller.abort(new DOMException(`مهلت ${timeoutMs} میلی‌ثانیه‌ای تمام شد`, 'TimeoutError')),
+    timeoutMs,
+  );
 
   const onAbort = () => controller.abort(signal?.reason);
   if (signal) {

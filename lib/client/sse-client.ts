@@ -10,6 +10,23 @@
 
 export type ParsedSseEvent = { event: string; data: unknown };
 
+/**
+ * سرور پاسخ داد ولی با وضعیت خطا.
+ *
+ * جدا از خطای شبکه نگه داشته می‌شود چون فراخوان با این دو کار
+ * متفاوتی می‌کند: خطای شبکه ارزش تلاش مجدد دارد، ولی ۴۰۰ و ۴۲۹
+ * پیام روشنی دارند که باید همان‌طور به کاربر نشان داده شود.
+ */
+export class SseHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'SseHttpError';
+  }
+}
+
 export async function* streamSse(
   url: string,
   body: unknown,
@@ -30,7 +47,7 @@ export async function* streamSse(
     } catch {
       /* بدنهٔ خطا JSON نبود */
     }
-    throw new Error(message);
+    throw new SseHttpError(message, response.status);
   }
 
   const reader = response.body.getReader();
