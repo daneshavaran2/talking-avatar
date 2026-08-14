@@ -144,6 +144,75 @@ async function main(): Promise<void> {
     );
   }
 
+  console.log('\n── اتصال مجدد، بدون پرسش تکراری (§۱۲.۲) ────');
+
+  // بدترین حالت قطعی شبکه: سرور نوبت را کامل کرده و ذخیره کرده، ولی
+  // پاسخ هرگز به کلاینت نرسیده. کلاینت دوباره می‌پرسد و باید همان
+  // نوبت جایگزین شود، نه اینکه پرسش دو بار در آرشیو بنشیند.
+  {
+    const retryConversation = randomUUID();
+    const question = 'ساعت کاری شما چطور است؟';
+    const firstTurn = randomUUID();
+    const secondTurn = randomUUID();
+
+    const send = (turnId: string, retryOfTurnId?: string) =>
+      sendTurn({
+        baseUrl: BASE_URL,
+        conversationId: retryConversation,
+        turnId,
+        message: question,
+        retryOfTurnId,
+      });
+
+    await send(firstTurn);
+    const afterFirst = await prisma.message.count({ where: { conversationId: retryConversation } });
+    assert('تلاش اول ثبت شد', afterFirst === 2, `${afterFirst} پیام`);
+
+    const second = await send(secondTurn, firstTurn);
+    assert('تلاش دوم پاسخ کامل داد', second.text.trim().length > 0, second.text.slice(0, 40));
+
+    const rows = await prisma.message.findMany({
+      where: { conversationId: retryConversation },
+      orderBy: { createdAt: 'asc' },
+      select: { role: true, turnId: true },
+    });
+    const turns = await prisma.turn.count({ where: { conversationId: retryConversation } });
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: retryConversation },
+      select: { messageCount: true },
+    });
+
+    assert('پرسش فقط یک بار ثبت شد', rows.filter((r) => r.role === 'user').length === 1);
+    assert('پاسخ فقط یک بار ثبت شد', rows.filter((r) => r.role === 'assistant').length === 1);
+    assert('ردیف نوبت قبلی پاک شد', turns === 1, `${turns} نوبت`);
+    assert('همهٔ ردیف‌ها به نوبت تازه تعلق دارند', rows.every((r) => r.turnId === secondTurn));
+    assert('شمارندهٔ پیام درست است', conversation?.messageCount === 2, `${conversation?.messageCount}`);
+
+    // محافظ: نوبتی که به مکالمهٔ دیگری تعلق دارد نباید پاک شود.
+    const otherConversation = randomUUID();
+    const otherTurn = randomUUID();
+    await sendTurn({
+      baseUrl: BASE_URL,
+      conversationId: otherConversation,
+      turnId: otherTurn,
+      message: question,
+    });
+
+    await sendTurn({
+      baseUrl: BASE_URL,
+      conversationId: retryConversation,
+      turnId: randomUUID(),
+      message: question,
+      retryOfTurnId: otherTurn,
+    });
+
+    const otherRows = await prisma.message.count({ where: { conversationId: otherConversation } });
+    assert('نوبت مکالمهٔ دیگر دست‌نخورده ماند', otherRows === 2, `${otherRows} پیام`);
+
+    await prisma.conversation.delete({ where: { id: retryConversation } }).catch(() => null);
+    await prisma.conversation.delete({ where: { id: otherConversation } }).catch(() => null);
+  }
+
   await prisma.conversation.delete({ where: { id: conversationId } }).catch(() => null);
 }
 

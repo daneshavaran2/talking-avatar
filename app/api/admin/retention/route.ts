@@ -27,7 +27,11 @@ export async function GET() {
       serviceErrors: preview.serviceErrors,
     });
   } catch (error) {
-    return serverError(error instanceof Error ? error.message : 'خواندن سیاست نگهداری ممکن نشد.');
+    // پیام خام پایگاه داده حتی برای مدیر هم بیرون نمی‌رود (E1)؛
+    // جزئیات فقط در لاگ سرور می‌ماند.
+    const detail = error instanceof Error ? error.message : String(error);
+    await logServiceError('auth', 'خواندن سیاست نگهداری شکست خورد', detail);
+    return serverError('خواندن سیاست نگهداری ممکن نشد.');
   }
 }
 

@@ -33,7 +33,9 @@ export function Composer({
   onInterrupt,
 }: ComposerProps) {
   const [value, setValue] = useState('');
-  const busy = state === 'thinking' || state === 'speaking';
+  // حین اتصال مجدد هم دکمهٔ توقف لازم است: انتظار می‌تواند چند ثانیه
+  // طول بکشد و کاربر باید بتواند بی‌خیالش شود. کادر نوشتن باز می‌ماند.
+  const busy = state === 'thinking' || state === 'speaking' || state === 'reconnecting';
 
   const send = () => {
     const text = value.trim();

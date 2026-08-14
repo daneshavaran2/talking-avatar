@@ -14,6 +14,7 @@ const DOT_BY_STATE: Record<ConversationState, string> = {
   thinking: 'bg-state-thinking',
   speaking: 'bg-state-speaking',
   interrupted: 'bg-state-idle',
+  reconnecting: 'bg-state-thinking',
   error: 'bg-state-error',
 };
 
@@ -23,11 +24,16 @@ const TEXT_BY_STATE: Record<ConversationState, string> = {
   thinking: 'text-state-thinking',
   speaking: 'text-state-speaking',
   interrupted: 'text-muted-foreground',
+  reconnecting: 'text-state-thinking',
   error: 'text-state-error',
 };
 
 export function StatusPill({ state }: { state: ConversationState }) {
-  const animated = state === 'listening' || state === 'thinking' || state === 'speaking';
+  const animated =
+    state === 'listening' ||
+    state === 'thinking' ||
+    state === 'speaking' ||
+    state === 'reconnecting';
 
   return (
     <div

@@ -41,6 +41,8 @@ export async function sendTurn(options: {
   message: string;
   inputType?: 'text' | 'voice';
   timeoutMs?: number;
+  /** شناسهٔ تلاش قبلی، وقتی این درخواست ادامهٔ یک نوبت قطع‌شده است */
+  retryOfTurnId?: string;
 }): Promise<TurnResult> {
   const post = () =>
     fetch(`${options.baseUrl}/api/chat`, {
@@ -51,6 +53,7 @@ export async function sendTurn(options: {
         turnId: options.turnId,
         message: options.message,
         inputType: options.inputType ?? 'text',
+        retryOfTurnId: options.retryOfTurnId,
       }),
       signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
     });

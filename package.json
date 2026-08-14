@@ -22,7 +22,8 @@
     "verify:tools": "tsx scripts/verify-tools.ts",
     "verify:resilience": "tsx scripts/verify-resilience.ts",
     "verify:secrets": "node scripts/verify-secrets.mjs",
-    "verify:degradation": "node scripts/verify-degradation.mjs"
+    "verify:degradation": "node scripts/verify-degradation.mjs",
+    "verify:reconnect": "node scripts/verify-reconnect.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

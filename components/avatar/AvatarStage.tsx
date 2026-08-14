@@ -36,6 +36,7 @@ const RING_BY_STATE: Record<ConversationState, string> = {
   thinking: 'ring-state-thinking/60',
   speaking: 'ring-state-speaking/55',
   interrupted: 'ring-border',
+  reconnecting: 'ring-state-thinking/40',
   error: 'ring-state-error/60',
 };
 

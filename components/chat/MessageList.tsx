@@ -103,7 +103,9 @@ function MessageBubble({ message }: { message: ChatMessageView }) {
 
 function ThinkingBubble() {
   return (
-    <div className="flex justify-end">
+    // برای صفحه‌خوان پنهان است چون نشانگر وضعیت بالای صفحه همین را
+    // اعلام می‌کند؛ اینجا فقط یک نشانهٔ دیداری است.
+    <div className="flex justify-end" data-slot="thinking" aria-hidden="true">
       <div className="flex items-center gap-1.5 rounded-2xl rounded-se-md bg-accent px-4 py-3">
         {[0, 1, 2].map((index) => (
           <span

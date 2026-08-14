@@ -13,6 +13,14 @@ export const chatRequestSchema = z.object({
   inputType: z.enum(['text', 'voice']).default('text'),
   /** زمان تشخیص شروع صحبت — برای محاسبهٔ تأخیر End-to-End (§۱۰.۱) */
   vadStartAt: z.number().int().positive().optional(),
+  /**
+   * شناسهٔ تلاش قبلی، وقتی اتصال وسط پاسخ قطع شده و کلاینت دوباره
+   * وصل شده است (§۱۲.۲).
+   *
+   * بدون این، همان پرسش دو بار در آرشیو و در حافظهٔ مکالمه می‌نشیند.
+   * سرور آثار تلاش ناموفق را پاک می‌کند تا یک پرسش، یک نوبت بماند.
+   */
+  retryOfTurnId: z.string().uuid().optional(),
 });
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
