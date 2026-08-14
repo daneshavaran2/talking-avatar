@@ -62,20 +62,36 @@ const median = (values: number[]): number => {
  * جریان را خودمان می‌خوانیم تا لحظهٔ رسیدن هر رویداد ثبت شود.
  */
 async function timedTurn(conversationId: string, message: string): Promise<Sample> {
-  const startedAt = Date.now();
-  const marks: Partial<Sample> = {};
+  const post = () =>
+    fetch(`${BASE_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        conversationId,
+        turnId: randomUUID(),
+        message,
+        inputType: 'text',
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
 
-  const response = await fetch(`${BASE_URL}/api/chat`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      conversationId,
-      turnId: randomUUID(),
-      message,
-      inputType: 'text',
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
+  // محدودیت نرخ سی درخواست در دقیقه است و این آزمون چند نوبت پشت
+  // سر هم می‌فرستد؛ رسیدن به سقف شکست آزمون نیست، پس صبر می‌کنیم.
+  // ساعت برای هر تلاش از نو صفر می‌شود تا انتظارِ محدودیت نرخ در
+  // عدد تأخیر نیفتد.
+  let startedAt = Date.now();
+  let response = await post();
+
+  for (let attempt = 0; response.status === 429 && attempt < 2; attempt += 1) {
+    const seconds = Number(response.headers.get('retry-after') ?? '5');
+    const waitMs = (Number.isFinite(seconds) ? seconds : 5) * 1000 + 500;
+    console.log(`      (۴۲۹ از محدودیت نرخ — ${Math.round(waitMs / 1000)} ثانیه صبر)`);
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    startedAt = Date.now();
+    response = await post();
+  }
+
+  const marks: Partial<Sample> = {};
 
   if (!response.ok || !response.body) throw new Error(`/api/chat پاسخ ${response.status} داد`);
 
