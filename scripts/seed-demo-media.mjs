@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
-import { chromium } from 'playwright';
+import { launchChromium } from './lib/browser.mjs';
 
 try {
   process.loadEnvFile();
@@ -27,8 +27,6 @@ try {
   // متغیرها باید از محیط بیایند.
 }
 
-const CHROMIUM_PATH =
-  process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const STORAGE_DIR = path.resolve(process.cwd(), process.env.STORAGE_DIR ?? './storage');
 
 const prisma = new PrismaClient();
@@ -41,7 +39,7 @@ const prisma = new PrismaClient();
  * کار زیاده‌روی بود.
  */
 async function drawFace() {
-  const browser = await chromium.launch({ executablePath: CHROMIUM_PATH, args: ['--no-sandbox'] });
+  const browser = await launchChromium();
   const page = await browser.newPage();
 
   const dataUrl = await page.evaluate(() => {
