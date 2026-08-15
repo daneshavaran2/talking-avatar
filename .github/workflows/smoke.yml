@@ -1,0 +1,17 @@
+name: smoke
+
+# ساده‌ترین Workflow ممکن: بدون Service، بدون Cache، بدون Action
+# بیرونی، بدون متغیر محیطی. فقط یک دستور echo.
+#
+# هدف: تفکیک «ایراد در Workflow ما» از «Runner اصلاً تخصیص داده
+# نمی‌شود». اگر حتی این هم شکست بخورد، مسئله سطح حساب است.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "runner works"
