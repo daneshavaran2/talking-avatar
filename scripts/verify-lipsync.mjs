@@ -17,13 +17,11 @@
  */
 
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
+import { launchChromium } from './lib/browser.mjs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const CHROMIUM_PATH =
-  process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
 let failures = 0;
 const assert = (name, ok, detail = '') => {
@@ -57,10 +55,7 @@ try {
   const bundle = bundled.outputFiles[0].text;
 
   // ── اجرا در کروم ────────────────────────────────────────────
-  const browser = await chromium.launch({
-    executablePath: CHROMIUM_PATH,
-    args: ['--no-sandbox'],
-  });
+  const browser = await launchChromium();
 
   const page = await browser.newPage({ viewport: { width: 800, height: 800 } });
   const pageErrors = [];

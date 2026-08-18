@@ -282,6 +282,31 @@ console.log('\n── Retry / backoff (E4) ────────────�
 // یک تابع بسته شده (tsx اینجا به CJS ترجمه می‌کند و top-level await
 // ندارد) و خلاصهٔ نهایی هم داخل همان اجرا می‌شود.
 async function socketChecks(): Promise<void> {
+  console.log('\n── Test harness: chromium resolution ─────────');
+  {
+    // این بررسی محصول را نمی‌سنجد، بلکه خودِ ابزار آزمون را.
+    // اشتباهی که می‌گیرد ظریف است: مسیر ثابتِ مرورگر روی ماشین توسعه
+    // کار می‌کند و همه‌جای دیگر — از جمله CI — بی‌صدا می‌شکند.
+    const { chromiumExecutablePath } = (await import('./lib/browser.mjs')) as {
+      chromiumExecutablePath: (presetPath?: string) => string | undefined;
+    };
+
+    const previous = process.env.CHROMIUM_PATH;
+    delete process.env.CHROMIUM_PATH;
+
+    check(
+      'falls back to Playwright when no preset exists',
+      chromiumExecutablePath('/definitely/not/here'),
+      undefined,
+    );
+
+    process.env.CHROMIUM_PATH = '/custom/chrome';
+    check('explicit CHROMIUM_PATH wins', chromiumExecutablePath('/definitely/not/here'), '/custom/chrome');
+
+    if (previous === undefined) delete process.env.CHROMIUM_PATH;
+    else process.env.CHROMIUM_PATH = previous;
+  }
+
   console.log('\n── Retry against a real socket ───────────────');
   const hits: Record<string, number> = {};
 

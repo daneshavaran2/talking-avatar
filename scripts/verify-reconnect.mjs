@@ -16,11 +16,9 @@
  * پیش‌نیاز: اپلیکیشن در حال اجرا (و یک مدل، مثلاً سرور نمونه).
  */
 
-import { chromium } from 'playwright';
+import { launchChromium } from './lib/browser.mjs';
 
 const BASE_URL = process.argv[2] ?? process.env.APP_URL ?? 'http://localhost:3000';
-const CHROMIUM_PATH =
-  process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
 const PARTIAL_TEXT = 'نیمه‌کارهٔ‌قطع‌شده';
 
@@ -38,9 +36,8 @@ try {
   process.exit(0);
 }
 
-const browser = await chromium.launch({
-  executablePath: CHROMIUM_PATH,
-  args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required', '--mute-audio'],
+const browser = await launchChromium({
+  args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'],
 });
 
 /**

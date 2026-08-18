@@ -30,11 +30,9 @@
  * اجرا می‌شود — چیزی شبیه‌سازی نشده جز خود سرویس بیرونی.
  */
 
-import { chromium } from 'playwright';
+import { launchChromium } from './lib/browser.mjs';
 
 const BASE_URL = process.argv[2] ?? process.env.APP_URL ?? 'http://localhost:3000';
-const CHROMIUM_PATH =
-  process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
 const QUESTION = process.env.E2E_QUESTION ?? 'ساعت کاری شما چطور است؟';
 
@@ -71,9 +69,8 @@ if (!config.speech?.ttsAvailable) {
 }
 
 // ── اجرای مرورگر ───────────────────────────────────────────────
-const browser = await chromium.launch({
-  executablePath: CHROMIUM_PATH,
-  args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required', '--mute-audio'],
+const browser = await launchChromium({
+  args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'],
 });
 
 const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });

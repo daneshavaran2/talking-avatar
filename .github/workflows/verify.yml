@@ -1,0 +1,157 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# اجرای تازه، اجرای قبلی همان شاخه را لغو می‌کند.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── بررسی‌هایی که به هیچ سرویسی نیاز ندارند ──────────────────
+  static:
+    name: lint · typecheck · build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # `next build` به Prisma Client نیاز دارد، ولی نه به پایگاه داده.
+      - run: npx prisma generate
+
+      - run: npm run lint
+      - run: npm run typecheck
+
+      - name: build
+        run: npm run build
+        env:
+          # مقدار ساختگی فقط برای گذر از اعتبارسنجی زمان بیلد؛
+          # هیچ اتصالی برقرار نمی‌شود.
+          DATABASE_URL: postgresql://build:build@localhost:5432/build
+          AUTH_SECRET: build-time-placeholder-not-a-real-secret
+
+      # اسکن نشت کلید روی همان باندلی که همین‌جا ساخته شد.
+      - run: npm run verify:secrets
+
+  # ── منطق هسته + نمودارها (نیازمند کروم، نه سرویس) ───────────
+  core:
+    name: core · lipsync · diagrams
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      # آزمون‌های مرورگری به کرومیوم واقعی نیاز دارند.
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run verify:core
+      - run: npm run verify:lipsync
+      - run: npm run verify:diagrams
+
+  # ── مجموعه‌های یکپارچه: پایگاه داده + سرور نمونه ─────────────
+  integration:
+    name: guardrails · tools · resilience · latency
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: digitalhuman
+          POSTGRES_PASSWORD: digitalhuman
+          POSTGRES_DB: digitalhuman
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U digitalhuman"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://digitalhuman:digitalhuman@localhost:5432/digitalhuman?schema=public
+      AUTH_SECRET: ci-only-secret-not-used-anywhere-else
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: ci-only-password
+      # سرور نمونه هر سه پروتکل بیرونی را پیاده می‌کند، پس کد واقعی
+      # Providerها اجرا می‌شود بدون اینکه کلید ابری لازم باشد.
+      LLM_PROVIDER: ollama
+      LLM_MODEL: stub
+      LLM_BASE_URL: http://localhost:11500
+      EMBEDDING_PROVIDER: ollama
+      EMBEDDING_MODEL: stub
+      EMBEDDING_BASE_URL: http://localhost:11500
+      EMBEDDING_DIM: '1536'
+      TTS_PROVIDER: media-engine
+      MEDIA_ENGINE_URL: http://localhost:11500
+      STT_PROVIDER: browser
+      AVATAR_PROVIDER: none
+      N8N_BASE_URL: http://localhost:11500
+      N8N_WEBHOOK_SECRET: ci-webhook-secret
+      STORAGE_DIR: ./storage
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - run: npx prisma migrate deploy
+      - run: npm run db:seed
+
+      # بدون آواتار و TTS فعال، سه مجموعهٔ مرورگری «رد» می‌شوند نه
+      # اجرا — یعنی سبزِ توخالی. این مرحله همان چیزی را می‌سازد که
+      # مدیر در Setup Wizard آپلود می‌کند.
+      - run: npm run db:seed:demo
+
+      - run: npm run build
+
+      - name: start stub services
+        run: |
+          node scripts/stub-services.mjs &
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:11500/__control >/dev/null && exit 0
+            sleep 1
+          done
+          echo "سرور نمونه بالا نیامد" && exit 1
+
+      - name: start app
+        run: |
+          npm start &
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:3000/api/health >/dev/null && exit 0
+            sleep 1
+          done
+          echo "اپلیکیشن بالا نیامد" && exit 1
+
+      # ترتیب مهم است: مجموعه‌های SSE خودشان سرنخ Retry-After محدودیت
+      # نرخ را رعایت می‌کنند، ولی آزمون‌های مرورگری این کار را نمی‌کنند،
+      # پس آخر اجرا می‌شوند تا پنجرهٔ نرخ خالی شده باشد.
+      - run: npm run verify:guardrails
+      - run: npm run verify:tools
+      - run: npm run verify:resilience
+      - run: npm run verify:latency
+      - run: npm run verify:degradation
+      - run: npm run verify:reconnect

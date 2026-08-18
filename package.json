@@ -13,9 +13,10 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:demo": "node scripts/seed-demo-media.mjs",
     "db:prune": "tsx scripts/prune-data.ts",
     "verify:core": "tsx scripts/verify-core.ts",
-    "verify": "npm run lint && npm run typecheck && npm run verify:core && npm run verify:lipsync && npm run build && npm run verify:secrets",
+    "verify": "npm run lint && npm run typecheck && npm run verify:core && npm run verify:lipsync && npm run verify:diagrams && npm run build && npm run verify:secrets",
     "verify:lipsync": "node scripts/verify-lipsync.mjs",
     "verify:e2e": "node scripts/verify-e2e-lipsync.mjs",
     "verify:guardrails": "tsx scripts/verify-guardrails.ts",
@@ -24,7 +25,8 @@
     "verify:secrets": "node scripts/verify-secrets.mjs",
     "verify:degradation": "node scripts/verify-degradation.mjs",
     "verify:reconnect": "node scripts/verify-reconnect.mjs",
-    "verify:latency": "tsx scripts/verify-latency.ts"
+    "verify:latency": "tsx scripts/verify-latency.ts",
+    "verify:diagrams": "node scripts/verify-diagrams.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -70,6 +72,7 @@
     "esbuild": "^0.25.0",
     "eslint": "9.39.5",
     "eslint-config-next": "15.5.23",
+    "mermaid": "^11.16.1",
     "playwright": "^1.62.1",
     "postcss": "8.5.26",
     "prisma": "6.19.3",
